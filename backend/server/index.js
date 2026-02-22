@@ -152,105 +152,71 @@ ${JSON.stringify(safeLogs)}
   }
 });
 
+function getAvailableUnits(description) {
+  const desc = description.toLowerCase();
+  if (desc.includes('juice') || desc.includes('milk') || desc.includes('water'))
+    return ['ml', 'fl oz', 'cup'];
+  if (desc.includes('cereal') || desc.includes('powder'))
+    return ['g', 'tbsp', 'tsp'];
+  if (desc.includes('fruit') || desc.includes('vegetable'))
+    return ['g', 'oz', 'piece', 'slice'];
+  if (desc.includes('babyfood'))
+    return ['g', 'jar', 'tbsp'];
+  return ['g', 'oz', 'tbsp', 'tsp'];
+}
+
+async function fetchNutritionDetail(id, apiKey) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const url = `https://api.spoonacular.com/food/ingredients/${id}/information?amount=100&unit=grams&apiKey=${apiKey}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const nutrients = data.nutrition?.nutrients || [];
+    const find = (name) => nutrients.find((n) => n.name.toLowerCase() === name.toLowerCase())?.amount ?? null;
+    return { calories: find("Calories"), fiber: find("Fiber"), sugar: find("Sugar"), protein: find("Protein"), water: find("Water") };
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
 app.get('/nutrition/search', async (req, res) => {
   const { query } = req.query;
   console.log('Search query received:', query);
-  
   if (!query) return res.status(400).json({ error: 'Missing query' });
 
   try {
-    const url = `https://api.nal.usda.gov/fdc/v1/foods/search` +
-      `?query=${encodeURIComponent(query)}` +
-      `&api_key=${process.env.USDA_API_KEY}` +
-      `&dataType=Foundation,SR%20Legacy` +
-      `&pageSize=5` +
-      `&requireAllWords=true`;
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('USDA API error:', errorText);
-      return res.status(500).json({ error: 'USDA API failed', details: errorText });
-    }
-    
-    const data = await response.json();
+    const searchUrl = `https://api.spoonacular.com/food/ingredients/search` +
+      `?query=${encodeURIComponent(query)}&number=5&apiKey=${process.env.SPOONACULAR_KEY}`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) throw new Error(`Spoonacular search ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    const items = searchData.results || [];
 
-    const results = (data.foods || []).map((food) => {
-      const getNutrient = (id) =>
-        food.foodNutrients?.find((n) => n.nutrientId === id)?.value ?? null;
+    const nutritionResults = await Promise.all(
+      items.map((item) => fetchNutritionDetail(item.id, process.env.SPOONACULAR_KEY))
+    );
 
-      // Extract serving size information
-      const servingSize = food.servingSize || 100; // Default to 100g if no serving size
-      const servingSizeUnit = food.servingSizeUnit || 'g'; // Default to grams
-      
-      // Common serving size mappings for baby foods
-      const getDefaultServing = (description) => {
-        const desc = description.toLowerCase();
-        if (desc.includes('babyfood') || desc.includes('baby')) {
-          return { size: 113, unit: 'g' }; // Standard baby food jar
-        }
-        if (desc.includes('juice')) {
-          return { size: 240, unit: 'ml' }; // 1 cup
-        }
-        if (desc.includes('cereal')) {
-          return { size: 15, unit: 'g' }; // 1 tbsp
-        }
-        if (desc.includes('fruit')) {
-          return { size: 28, unit: 'g' }; // 1 oz
-        }
-        return { size: servingSize, unit: servingSizeUnit };
-      };
+    const results = items.map((item, i) => ({
+      name: item.name.charAt(0).toUpperCase() + item.name.slice(1),
+      fdcId: item.id,
+      calories: nutritionResults[i]?.calories ?? null,
+      fiber: nutritionResults[i]?.fiber ?? null,
+      sugar: nutritionResults[i]?.sugar ?? null,
+      protein: nutritionResults[i]?.protein ?? null,
+      water: nutritionResults[i]?.water ?? null,
+      availableUnits: getAvailableUnits(item.name),
+    }));
 
-      const defaultServing = getDefaultServing(food.description);
-
-      const result = {
-        name: food.description,
-        fdcId: food.fdcId,
-        calories: getNutrient(1008),
-        fiber: getNutrient(1079),
-        sugar: getNutrient(2000),
-        protein: getNutrient(1003),
-        water: getNutrient(1051),
-        // Add serving information
-        defaultServingSize: defaultServing.size,
-        defaultUnit: defaultServing.unit,
-        // Alternative common units for this food
-        availableUnits: getAvailableUnits(food.description)
-      };
-      
-      return result;
-    });
-
+    console.log(`Spoonacular returned ${results.length} results with nutrition`);
     return res.json({ results });
   } catch (err) {
-    console.error('USDA search error:', err.message);
+    console.error('Nutrition search error:', err.message);
     return res.status(500).json({ error: 'nutrition_search_failed', details: err.message });
   }
 });
-
-// Helper function to suggest appropriate units based on food type
-function getAvailableUnits(description) {
-  const desc = description.toLowerCase();
-  
-  if (desc.includes('juice') || desc.includes('milk') || desc.includes('water')) {
-    return ['ml', 'fl oz', 'cup'];
-  }
-  
-  if (desc.includes('cereal') || desc.includes('powder')) {
-    return ['g', 'tbsp', 'tsp'];
-  }
-  
-  if (desc.includes('fruit') || desc.includes('vegetable')) {
-    return ['g', 'oz', 'piece', 'slice'];
-  }
-  
-  if (desc.includes('babyfood')) {
-    return ['g', 'jar', 'tbsp'];
-  }
-  
-  // Default units
-  return ['g', 'oz', 'tbsp', 'tsp'];
-}
 
 app.listen(3333, () => console.log("Server running on http://localhost:3333"));

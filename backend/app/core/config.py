@@ -14,10 +14,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     featherless_api_key: str | None = Field(default=None, validation_alias=AliasChoices("featherless_api_key", "FEATHERLESS_API_KEY"))
     featherless_model: str | None = Field(default=None, validation_alias=AliasChoices("featherless_model", "FEATHERLESS_MODEL"))
-    usda_api_key: str | None = Field(default=None, validation_alias=AliasChoices("usda_api_key", "USDA_API_KEY"))
-    featherless_timeout_seconds: float = Field(default=18.0, validation_alias=AliasChoices("featherless_timeout_seconds", "FEATHERLESS_TIMEOUT_SECONDS"))
-    usda_timeout_seconds: float = Field(default=15.0, validation_alias=AliasChoices("usda_timeout_seconds", "USDA_TIMEOUT_SECONDS"))
-    nutrition_cache_ttl_seconds: int = Field(default=600, validation_alias=AliasChoices("nutrition_cache_ttl_seconds", "NUTRITION_CACHE_TTL_SECONDS"))
+    spoonacular_key: str | None = Field(default=None, validation_alias=AliasChoices("spoonacular_key", "SPOONACULAR_KEY"))
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

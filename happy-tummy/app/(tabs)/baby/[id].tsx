@@ -66,14 +66,26 @@ export default function BabyProfileDetailScreen() {
 
           setChild(selected);
 
-          const [summary, recommendations] = await Promise.all([
+          const [summaryResult, recommendationsResult] = await Promise.allSettled([
             getChildSummary(selected.user_key),
             getMealRecommendations(selected.user_key),
           ]);
 
           if (!active) return;
-          setChildSummary(summary);
-          setMealRecommendations(recommendations);
+
+          if (summaryResult.status === 'fulfilled') {
+            setChildSummary(summaryResult.value);
+          } else {
+            console.error('Failed to load child summary:', summaryResult.reason);
+            setChildSummary(null);
+          }
+
+          if (recommendationsResult.status === 'fulfilled') {
+            setMealRecommendations(recommendationsResult.value);
+          } else {
+            console.error('Failed to load meal recommendations:', recommendationsResult.reason);
+            setMealRecommendations(null);
+          }
         } catch (err) {
           if (!active) return;
           console.error('Failed to load child profile:', err);

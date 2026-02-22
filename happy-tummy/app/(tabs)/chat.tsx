@@ -94,7 +94,15 @@ export default function ChatScreen() {
   const [parentName, setParentName] = useState('there');
   const [childName, setChildName] = useState('your little one');
   const [babyData, setBabyData] = useState<ChildResponse | null>(null);
+  const [isWarming, setIsWarming] = useState(false);
+  const [statusText, setStatusText] = useState('Always here for you');
   const scrollRef = useRef<ScrollView>(null);
+
+  const buildWelcomeMessage = () => ({
+    id: `welcome-${Date.now()}`,
+    role: 'ai' as const,
+    text: `Hi ${parentName}! Ask me anything about ${childName}'s digestion and I'll answer using their logs and nutrition data.`,
+  });
 
   // Fetch user and child data on mount
   useEffect(() => {
@@ -120,15 +128,42 @@ export default function ChatScreen() {
   // Initialize messages once we have names
   useEffect(() => {
     if (messages.length === 0 && (parentName !== 'there' || childName !== 'your little one')) {
-      setMessages([
-        {
-          id: '1',
-          role: 'ai',
-          text: `Hi ${parentName}! I know ${childName} well — ask me anything about their digestion and I'll answer based on their logs.`,
-        },
-      ]);
+      setMessages([buildWelcomeMessage()]);
     }
   }, [parentName, childName]);
+
+  const warmUpAi = async () => {
+    setIsWarming(true);
+    setStatusText('Warming AI...');
+
+    const baby = babyData
+      ? {
+          name: babyData.name || 'baby',
+          ageMonths: babyData.age || 0,
+          allergies: [],
+        }
+      : { name: 'baby', ageMonths: 0, allergies: [] };
+
+    try {
+      await getChatReply({
+        baby,
+        recentLogs: [],
+        conversation: [],
+        userMessage: 'Warm up. Reply with: ready',
+      });
+      setStatusText('AI is ready');
+    } catch {
+      setStatusText('AI warm-up attempted');
+    } finally {
+      setIsWarming(false);
+    }
+  };
+
+  const handleResetChatBot = async () => {
+    setInput('');
+    setMessages([buildWelcomeMessage()]);
+    await warmUpAi();
+  };
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -202,10 +237,18 @@ export default function ChatScreen() {
         <View style={styles.aiAvatar}>
           <Text style={styles.aiAvatarEmoji}>🌿</Text>
         </View>
-        <View>
+        <View style={styles.headerTextWrap}>
           <Text style={styles.headerName}>Ask Happy Tummy AI</Text>
-          <Text style={styles.headerStatus}>Always here for you</Text>
+          <Text style={styles.headerStatus}>{statusText}</Text>
         </View>
+        <TouchableOpacity
+          style={[styles.resetAiBtn, isWarming && styles.resetAiBtnDisabled]}
+          onPress={handleResetChatBot}
+          disabled={isWarming}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.resetAiBtnText}>{isWarming ? 'Warming...' : 'Reset AI'}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Wave curve */}
@@ -284,7 +327,10 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 15,
+    gap: 10,
+  },
+  headerTextWrap: {
+    flex: 1,
   },
   aiAvatar: {
     width: 46,
@@ -307,6 +353,22 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.body,
     fontSize: 12,
     color: 'rgba(255,255,255,0.75)',
+  },
+  resetAiBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
+  resetAiBtnDisabled: {
+    opacity: 0.7,
+  },
+  resetAiBtnText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 11,
+    color: Colors.white,
   },
 
   // Messages
