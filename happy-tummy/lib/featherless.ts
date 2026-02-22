@@ -43,3 +43,20 @@ export async function getChatReply(payload: {
 
   return res.json() as Promise<{ reply: string }>;
 }
+
+export async function searchNutrition(query: string) {
+  const base = process.env.EXPO_PUBLIC_AI_URL;
+  if (!base) throw new Error("Missing EXPO_PUBLIC_AI_URL");
+
+  const res = await fetch(`${base}/nutrition/search?query=${encodeURIComponent(query)}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Nutrition search failed: ${res.status} ${text}`);
+  }
+
+  return res.json() as Promise<{ results: any[] }>;
+}

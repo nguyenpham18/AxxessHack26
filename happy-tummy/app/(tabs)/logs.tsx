@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 
 // ─── Constants ─────────────────────────────────────────────
-const SERVER = 'http://localhost:3333';
+import { getCoachMessage, getChatReply, searchNutrition } from '@/lib/featherless';
 
 const STOOL_TYPES = [
   { type: 1, label: 'Type 1', desc: 'Hard lumps'   },
@@ -648,8 +648,7 @@ function FoodSearchSection({
     setSearching(true);
     setShowResults(true);
     try {
-      const res  = await fetch(`${SERVER}/nutrition/search?query=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
+      const data = await searchNutrition(query.trim());
       setResults(data.results || []);
     } catch {
       setResults([]);
