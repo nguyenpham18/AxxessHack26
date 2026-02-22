@@ -1,53 +1,73 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-import { Platform } from 'react-native';
-
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
+// ─── COLORS ───────────────────────────────────────────────
 export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+  // Primary
+  red:      '#c61e3a',
+  redDark:  '#C0102C',
+  redSoft:  '#FF6B84',
+  redPale:  '#FFF0F2',
+  redMid:   '#FFBDC7',
+
+  // Accent
+  yellow:      '#FFD166',
+  yellowPale:  '#FFF8E1',
+  green:       '#06D6A0',
+  greenPale:   '#E0FBF4',
+
+  // Neutrals
+  cream:    '#FFFBF4',
+  cream2:   '#FFF5E6',
+  gray100:  '#F9F3F4',
+  gray200:  '#F0E8EA',
+  gray300:  '#DDD0D3',
+  gray500:  '#B09098',
+  gray700:  '#7A5560',
+  gray900:  '#3D1F27',
+
+  // Base
+  white:   '#FFFFFF',
+  outline: '#3D1F27',
+};
+
+// ─── FONTS ────────────────────────────────────────────────
+// All Nunito — sans-serif, warm, rounded
+export const FontFamily = {
+  display:    'Nunito_900Black',      // big headings
+  displayBold:'Nunito_800ExtraBold',  // sub-headings
+  body:       'Nunito_700Bold',       // body text
+  bodyBold:   'Nunito_800ExtraBold',  // emphasis
+  bodyBlack:  'Nunito_900Black',      // labels / caps
+};
+
+// ─── SHADOWS (cartoon style: hard offset, no blur) ────────
+export const Shadow = {
+  sm: {
+    shadowColor: '#3D1F27',
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 4,
   },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+  md: {
+    shadowColor: '#3D1F27',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 6,
+  },
+  lg: {
+    shadowColor: '#3D1F27',
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 8,
   },
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+// ─── BORDER RADIUS ────────────────────────────────────────
+export const Radius = {
+  pill: 999,
+  xl:   28,
+  lg:   22,
+  md:   16,
+  sm:   12,
+};
