@@ -10,6 +10,8 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
+import { createChild } from '@/lib/api';
+import { getChildDraft, resetChildDraft } from '@/lib/childDraft';
 
 // ─── Age Range Selector ────────────────────────────────────
 type AgeRange = '6to12' | '12to24';
@@ -67,6 +69,8 @@ export default function BabyIntakeScreen() {
   const [waterUnder16,setWaterUnder16] = useState<boolean | null>(null); // Q10
   const [hardStool,   setHardStool]    = useState<boolean | null>(null); // Q11
   const [eatsFruits,  setEatsFruits]   = useState<boolean | null>(null); // Q12
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const AGE_OPTIONS: { label: string; value: AgeRange }[] = [
     { label: '6–12 months', value: '6to12'   },
@@ -185,12 +189,39 @@ export default function BabyIntakeScreen() {
         {/* Done button — always visible once age is selected */}
         {ageRange !== null && (
           <AppButton
-            label="All done! Let's go!"
+            label={loading ? 'Saving...' : "All done! Let's go!"}
             variant="yellow"
-            onPress={() => router.replace('/(tabs)')}
+            onPress={async () => {
+              if (loading) return;
+              setError('');
+              setLoading(true);
+
+              try {
+                const draft = getChildDraft();
+                await createChild({
+                  name: draft.name ?? 'Baby',
+                  age: null,
+                  gender: draft.gender ?? null,
+                  weight: draft.weight ?? null,
+                  allergies: draft.allergies ? 1 : 0,
+                  early_born: draft.earlyBorn ? 1 : 0,
+                  delivery_method: draft.deliveryMethod ?? null,
+                  envi_change: null,
+                });
+                resetChildDraft();
+                router.replace('/(tabs)');
+              } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to save baby profile';
+                setError(message);
+              } finally {
+                setLoading(false);
+              }
+            }}
             style={{ marginTop: 8 }}
           />
         )}
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -257,6 +288,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: Colors.gray700,
     marginBottom: 10,
+  },
+  errorText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.redDark,
+    textAlign: 'center',
   },
 
   // Age range selector

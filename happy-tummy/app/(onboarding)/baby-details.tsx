@@ -11,6 +11,7 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
+import { setChildDraft } from '@/lib/childDraft';
 
 export default function BabyDetailsScreen() {
   const [weight, setWeight] = useState('');
@@ -18,6 +19,22 @@ export default function BabyDetailsScreen() {
   const [allergyText, setAllergyText] = useState('');
   const [premature, setPremature] = useState<boolean | null>(null);
   const [delivery, setDelivery] = useState<number | null>(null);
+
+  const handleContinue = () => {
+    const weightValue = Number.parseFloat(weight);
+    const normalizedWeight = Number.isFinite(weightValue)
+      ? Math.round(weightValue)
+      : null;
+
+    setChildDraft({
+      weight: normalizedWeight,
+      allergies: hasAllergy,
+      earlyBorn: premature,
+      deliveryMethod: delivery,
+    });
+
+    router.replace('/(onboarding)/baby-intake');
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -148,7 +165,7 @@ export default function BabyDetailsScreen() {
         <AppButton
           label="Continue →"
           variant="red"
-          onPress={() => router.replace('/(onboarding)/baby-intake')}
+          onPress={handleContinue}
           style={{ marginTop: 8 }}
         />
       </ScrollView>

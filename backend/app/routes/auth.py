@@ -22,7 +22,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Username already exists")
 
     user = User(
-        full_name=payload.full_name,
+        first_name=payload.first_name,
         username=payload.username,
         hashed_password=get_password_hash(payload.password),
     )

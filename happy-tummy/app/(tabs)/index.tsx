@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,58 +10,92 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { getMe, listChildren } from '@/lib/api';
+
+type ChildItem = {
+  user_key: number;
+  name: string | null;
+  age: number | null;
+};
 
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
+  const [children, setChildren] = useState<ChildItem[]>([]);
+  const [parentName, setParentName] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        const [me, kids] = await Promise.all([getMe(), listChildren()]);
+        if (!isMounted) return;
+        setParentName(me.first_name ?? me.username);
+        setChildren(kids);
+      } catch {
+        if (!isMounted) return;
+        setChildren([]);
+      }
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleAddBaby = () => {
-    router.push('/baby-profile');
+    router.push('/(onboarding)/baby-profile');
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-
-      {/* Red header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.hi}>Good morning!</Text>
-            <Text style={styles.name}>Welcome back, Sarah!</Text>
+            <Text style={styles.name}>
+              {parentName ? `Welcome back, ${parentName}!` : 'Welcome back!'}
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* Wave curve */}
       <View style={styles.wave} />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ── Baby profiles ── */}
         <Text style={styles.sectionTitle}>Your Babies</Text>
 
-        {/* Maya */}
-        <TouchableOpacity
-          style={[styles.babyCard, selectedBaby === 0 && styles.babyCardActive]}
-          onPress={() => setSelectedBaby(0)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.babyAvatar}>
-            <MaterialCommunityIcons name="baby-face" size={24} color={Colors.red} />
-          </View>
-          <View style={styles.babyInfo}>
-            <Text style={styles.babyName}>Maya</Text>
-            <Text style={styles.babyAge}>7 months · Formula-fed</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: Colors.greenPale }]}>
-            <Ionicons name="checkmark-circle" size={16} color={Colors.green} />
-            <Text style={styles.badgeLabel}>Good</Text>
-          </View>
-        </TouchableOpacity>
-        
-        {/* Add baby */}
+        {children.length === 0 && (
+          <Text style={styles.emptyText}>No baby profiles yet. Add one below.</Text>
+        )}
+
+        {children.map((child, index) => (
+          <TouchableOpacity
+            key={child.user_key}
+            style={[styles.babyCard, selectedBaby === index && styles.babyCardActive]}
+            onPress={() => setSelectedBaby(index)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.babyAvatar}>
+              <MaterialCommunityIcons name="baby-face" size={24} color={Colors.red} />
+            </View>
+            <View style={styles.babyInfo}>
+              <Text style={styles.babyName}>{child.name ?? 'Baby'}</Text>
+              <Text style={styles.babyAge}>
+                {child.age ? `${child.age} months` : 'Age not set'}
+              </Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: Colors.greenPale }]}>
+              <Ionicons name="checkmark-circle" size={16} color={Colors.green} />
+              <Text style={styles.badgeLabel}>Good</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+
         <TouchableOpacity
           style={styles.addCard}
           activeOpacity={0.8}
@@ -76,11 +110,12 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── Today's insights ── */}
-        <Text style={styles.sectionTitle}>Today's Insights — Maya</Text>
+        <Text style={styles.sectionTitle}>
+          Today's Insights — {children[selectedBaby]?.name ?? 'Your Baby'}
+        </Text>
 
-        {/* Warning insight */}
-        <View style={[styles.insightCard, { borderLeftColor: Colors.yellow }]}>
+        <View style={[styles.insightCard, { borderLeftColor: Colors.yellow }]}
+        >
           <View style={styles.insightTop}>
             <Ionicons name="warning" size={18} color={Colors.yellow} />
             <Text style={styles.insightTitle}>No poop logged — Day 2</Text>
@@ -94,8 +129,8 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* OK insight */}
-        <View style={[styles.insightCard, { borderLeftColor: Colors.green }]}>
+        <View style={[styles.insightCard, { borderLeftColor: Colors.green }]}
+        >
           <View style={styles.insightTop}>
             <Ionicons name="checkmark-circle" size={18} color={Colors.green} />
             <Text style={styles.insightTitle}>Sweet potato — all clear!</Text>
@@ -105,7 +140,6 @@ export default function DashboardScreen() {
             No digestive reaction after 72 hours. Safe to keep feeding! Great job, mama!
           </Text>
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -238,6 +272,11 @@ const styles = StyleSheet.create({
     color: Colors.gray700,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  emptyText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.gray500,
   },
 
   // Add baby card
