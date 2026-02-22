@@ -9,6 +9,7 @@ from app.models import happytummy_schema
 from app.models.user import User
 from app.routes.auth import router as auth_router
 from app.routes.children import router as children_router
+from app.routes.ai import router as ai_router
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -48,3 +49,4 @@ ensure_schema_compatibility()
 
 app.include_router(children_router, prefix="/api", tags=["children"])
 app.include_router(auth_router, prefix="/api")
+app.include_router(ai_router, tags=["ai"])
