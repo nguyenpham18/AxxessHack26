@@ -1,147 +1,138 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  TouchableOpacity,
   TextInput,
+  TouchableOpacity,
   Alert,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
-// ─── Icon Scale Component ─────────────────────────────────
-function IconScale({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: { IconComponent: any; iconName: string; label: string; color?: string }[];
-  selected: number;
-  onSelect: (i: number) => void;
-}) {
-  return (
-    <View>
-      <View style={scaleStyles.track}>
-        {options.map((opt, i) => (
-          <TouchableOpacity
-            key={i}
-            onPress={() => onSelect(i)}
-            style={[
-              scaleStyles.opt,
-              selected === i && scaleStyles.optSel,
-              selected === i && scaleStyles.optSelRaised,
-            ]}
-            activeOpacity={0.8}
-          >
-            <opt.IconComponent 
-              name={opt.iconName} 
-              size={22} 
-              color={selected === i ? (opt.color || Colors.gray900) : Colors.gray500}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={scaleStyles.labelRow}>
-        {options.map((opt, i) => (
-          <Text
-            key={i}
-            style={[scaleStyles.label, selected === i && scaleStyles.labelSel]}
-          >
-            {opt.label}
-          </Text>
-        ))}
-      </View>
-    </View>
-  );
+// ─── Constants ─────────────────────────────────────────────
+const SERVER = 'http://localhost:3333';
+
+const STOOL_TYPES = [
+  { type: 1, label: 'Type 1', desc: 'Hard lumps'   },
+  { type: 2, label: 'Type 2', desc: 'Lumpy'        },
+  { type: 3, label: 'Type 3', desc: 'Cracked'      },
+  { type: 4, label: 'Type 4', desc: 'Smooth'       },
+  { type: 5, label: 'Type 5', desc: 'Soft blobs'   },
+  { type: 6, label: 'Type 6', desc: 'Fluffy'       },
+  { type: 7, label: 'Type 7', desc: 'Watery'       },
+];
+
+const stoolColor = (type: number) => {
+  if (type <= 2) return '#F5C842';
+  if (type <= 5) return '#8B5E3C';
+  return '#4CAF50';
+};
+
+const HYDRATION_OPTIONS = [
+  { label: 'Low',    desc: 'Less than usual', icon: 'water-outline' as const },
+  { label: 'Normal', desc: 'About right',     icon: 'water'         as const },
+  { label: 'Good',   desc: 'More than usual', icon: 'thunderstorm'  as const },
+];
+
+const UNIT_TO_GRAMS: Record<string, number> = {
+  tsp:    4,
+  tbsp:   12,
+  oz:     28,
+  cup:    120,
+  pieces: 30,
+  strips: 20,
+  g:      1,
+};
+
+const UNIT_OPTIONS = [
+  { label: 'tsp',    desc: 'teaspoon'   },
+  { label: 'tbsp',   desc: 'tablespoon' },
+  { label: 'oz',     desc: 'ounce'      },
+  { label: 'cup',    desc: 'cup'        },
+  { label: 'pieces', desc: 'pieces'     },
+  { label: 'strips', desc: 'strips'     },
+  { label: 'g',      desc: 'grams'      },
+];
+
+// ─── Types ─────────────────────────────────────────────────
+interface NutritionInfo {
+  calories: number | null;
+  fiber:    number | null;
+  sugar:    number | null;
+  protein:  number | null;
 }
 
-const scaleStyles = StyleSheet.create({
-  track: {
-    flexDirection: 'row',
-    backgroundColor: Colors.gray100,
-    borderWidth: 2.5,
-    borderColor: Colors.outline,
-    borderRadius: Radius.pill,
-    padding: 4,
-    gap: 2,
-  },
-  opt: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  optSel: { backgroundColor: Colors.redPale },
-  optSelRaised: {
-    borderWidth: 2,
-    borderColor: Colors.outline,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    marginTop: 4,
-    paddingHorizontal: 4,
-  },
-  label: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 9,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    flex: 1,
-    textAlign: 'center',
-  },
-  labelSel: {
-    color: Colors.redDark,
-  },
-});
+interface FoodTag {
+  id:        string;
+  name:      string;
+  quantity:  number;
+  unit:      string;
+  gramsEst:  number;
+  nutrition: NutritionInfo | null;
+}
 
-// ─── Log Card Component ────────────────────────────────────
-function LogCard({
-  IconComponent,
-  iconName,
-  iconBg,
-  iconColor = Colors.gray500,
-  title,
-  subtitle,
-  children,
-  defaultExpanded = false,
+interface FoodSearchResult {
+  name: string;
+  fdcId: number;
+  calories: number | null;
+  fiber: number | null;
+  sugar: number | null;
+  protein: number | null;
+  water: number | null;
+  defaultServingSize?: number;
+  defaultUnit?: string;
+  availableUnits?: string[];
+}
+
+// ─── Helpers ───────────────────────────────────────────────
+const scaleNutrition = (nutrition: NutritionInfo | null, grams: number) => {
+  if (!nutrition) return null;
+  const s = grams / 100;
+  return {
+    calories: nutrition.calories !== null ? Math.round(nutrition.calories * s)       : null,
+    fiber:    nutrition.fiber    !== null ? +((nutrition.fiber    * s).toFixed(1))   : null,
+    sugar:    nutrition.sugar    !== null ? +((nutrition.sugar    * s).toFixed(1))   : null,
+    protein:  nutrition.protein  !== null ? +((nutrition.protein  * s).toFixed(1))   : null,
+  };
+};
+
+// Helper to get smart defaults based on food name
+const getSmartDefaults = (foodName: string): { quantity: number; unit: string } => {
+  const name = foodName.toLowerCase();
+  
+  // Baby foods and purees
+  if (name.includes('cereal') || name.includes('oatmeal')) return { quantity: 2, unit: 'tbsp' };
+  if (name.includes('puree') || name.includes('baby food')) return { quantity: 3, unit: 'tbsp' };
+  if (name.includes('banana') || name.includes('apple')) return { quantity: 0.25, unit: 'pieces' };
+  if (name.includes('milk') || name.includes('formula')) return { quantity: 2, unit: 'oz' };
+  if (name.includes('yogurt')) return { quantity: 2, unit: 'tbsp' };
+  
+  // Default
+  return { quantity: 1, unit: 'tbsp' };
+};
+
+// ─── Section Card ──────────────────────────────────────────
+function SectionCard({
+  iconName, title, children,
 }: {
-  IconComponent: any;
-  iconName: string;
-  iconBg: string;
-  iconColor?: string;
+  iconName: keyof typeof Ionicons.glyphMap;
   title: string;
-  subtitle: string;
-  children?: React.ReactNode;
-  defaultExpanded?: boolean;
+  children: React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-
   return (
     <View style={cardStyles.card}>
-      <TouchableOpacity
-        onPress={() => setExpanded(!expanded)}
-        style={cardStyles.header}
-        activeOpacity={0.8}
-      >
-        <View style={[cardStyles.iconBox, { backgroundColor: iconBg }]}>
-          <IconComponent name={iconName} size={24} color={iconColor} />
+      <View style={cardStyles.header}>
+        <View style={cardStyles.iconBox}>
+          <Ionicons name={iconName} size={18} color={Colors.red} />
         </View>
-        <View style={cardStyles.textBox}>
-          <Text style={cardStyles.title}>{title}</Text>
-          <Text style={cardStyles.subtitle}>{subtitle}</Text>
-        </View>
-        <Ionicons 
-          name={expanded ? "chevron-down" : "chevron-forward"} 
-          size={18} 
-          color={Colors.gray500} 
-        />
-      </TouchableOpacity>
-      {expanded && <View style={cardStyles.body}>{children}</View>}
+        <Text style={cardStyles.title}>{title}</Text>
+      </View>
+      <View style={cardStyles.body}>{children}</View>
     </View>
   );
 }
@@ -158,675 +149,689 @@ const cardStyles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     padding: 14,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.gray200,
+    backgroundColor: Colors.gray100,
   },
   iconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: Colors.redPale,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 15,
+    color: Colors.gray900,
+  },
+  body: { padding: 14, gap: 12 },
+});
+
+function MiniLabel({ text }: { text: string }) {
+  return <Text style={styles.miniLabel}>{text}</Text>;
+}
+
+// ─── Quantity Prompt Modal ─────────────────────────────────
+function QuantityPrompt({
+  food, onConfirm, onCancel,
+}: {
+  food: { name: string; nutrition: NutritionInfo | null };
+  onConfirm: (quantity: number, unit: string) => void;
+  onCancel: () => void;
+}) {
+  // Get smart defaults
+  const defaults = getSmartDefaults(food.name);
+  const [quantity, setQuantity] = useState(defaults.quantity);
+  const [unit,     setUnit]     = useState(defaults.unit);
+
+  const grams  = quantity * (UNIT_TO_GRAMS[unit] ?? 30);
+  const scaled = scaleNutrition(food.nutrition, grams);
+
+  // Quick add with defaults
+  const handleQuickAdd = () => {
+    onConfirm(defaults.quantity, defaults.unit);
+  };
+
+  return (
+    <Modal transparent animationType="slide">
+      <View style={promptStyles.overlay}>
+        <View style={promptStyles.sheet}>
+          <View style={promptStyles.handle} />
+          <Text style={promptStyles.title}>How much did Maya have?</Text>
+          <Text style={promptStyles.foodName}>{food.name}</Text>
+
+          {/* Quick add suggestion */}
+          <TouchableOpacity 
+            style={promptStyles.quickAddBtn} 
+            onPress={handleQuickAdd}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="flash" size={18} color={Colors.white} />
+            <Text style={promptStyles.quickAddText}>
+              Quick Add: {defaults.quantity} {defaults.unit}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={promptStyles.orText}>or customize amount:</Text>
+
+          {/* Existing quantity stepper and unit selector - keep exactly as is */}
+          <View style={promptStyles.stepperRow}>
+            <TouchableOpacity
+              onPress={() => setQuantity(Math.max(0.1, +(quantity - 0.25).toFixed(2)))}
+              style={promptStyles.stepBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="remove" size={20} color={Colors.white} />
+            </TouchableOpacity>
+            <View style={promptStyles.quantityBox}>
+              <Text style={promptStyles.quantityNum}>{quantity}</Text>
+              <Text style={promptStyles.quantityUnit}>{unit}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setQuantity(+(quantity + 0.25).toFixed(2))}
+              style={promptStyles.stepBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={20} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Unit selector */}
+          <Text style={promptStyles.unitLabel}>UNIT</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={promptStyles.unitRow}
+          >
+            {UNIT_OPTIONS.map((u) => (
+              <TouchableOpacity
+                key={u.label}
+                onPress={() => setUnit(u.label)}
+                style={[promptStyles.unitBtn, unit === u.label && promptStyles.unitBtnSel]}
+                activeOpacity={0.8}
+              >
+                <Text style={[promptStyles.unitBtnLabel, unit === u.label && promptStyles.unitBtnLabelSel]}>
+                  {u.label}
+                </Text>
+                <Text style={promptStyles.unitBtnDesc}>{u.desc}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Nutrition preview - keep exactly as is */}
+          {scaled && (
+            <View style={promptStyles.nutritionPreview}>
+              <Text style={promptStyles.nutritionPreviewTitle}>
+                Estimated for {quantity} {unit} (~{Math.round(grams)}g)
+              </Text>
+              <View style={promptStyles.pillRow}>
+                {scaled.calories !== null && (
+                  <View style={promptStyles.pill}>
+                    <Ionicons name="flame-outline" size={12} color={Colors.gray700} />
+                    <Text style={promptStyles.pillText}>{scaled.calories} kcal</Text>
+                  </View>
+                )}
+                {scaled.fiber !== null && (
+                  <View style={[promptStyles.pill, { backgroundColor: Colors.greenPale }]}>
+                    <Ionicons name="leaf-outline" size={12} color={Colors.gray700} />
+                    <Text style={promptStyles.pillText}>{scaled.fiber}g fiber</Text>
+                  </View>
+                )}
+                {scaled.sugar !== null && (
+                  <View style={[promptStyles.pill, { backgroundColor: Colors.yellowPale }]}>
+                    <Ionicons name="cube-outline" size={12} color={Colors.gray700} />
+                    <Text style={promptStyles.pillText}>{scaled.sugar}g sugar</Text>
+                  </View>
+                )}
+                {scaled.protein !== null && (
+                  <View style={[promptStyles.pill, { backgroundColor: Colors.redPale }]}>
+                    <Ionicons name="barbell-outline" size={12} color={Colors.gray700} />
+                    <Text style={promptStyles.pillText}>{scaled.protein}g protein</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Buttons */}
+          <View style={promptStyles.btnRow}>
+            <TouchableOpacity onPress={onCancel} style={promptStyles.cancelBtn} activeOpacity={0.8}>
+              <Text style={promptStyles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onConfirm(quantity, unit)}
+              style={promptStyles.confirmBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={Colors.white} />
+              <Text style={promptStyles.confirmBtnText}>Add Custom</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const promptStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: Colors.cream,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    padding: 20,
+    paddingBottom: 36,
+    gap: 14,
+  },
+  handle: {
+    width: 40,
+    height: 5,
+    backgroundColor: Colors.gray300,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  title: {
+    fontFamily: FontFamily.display,
+    fontSize: 20,
+    color: Colors.gray900,
+    textAlign: 'center',
+  },
+  foodName: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 14,
+    color: Colors.gray500,
+    textAlign: 'center',
+    marginTop: -8,
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  stepBtn: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: 24,
+    backgroundColor: Colors.red,
     borderWidth: 3,
     borderColor: Colors.outline,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadow.sm,
   },
-  textBox: { flex: 1 },
-  title: {
-    fontFamily: FontFamily.displayBold,
-    fontSize: 15,
-    color: Colors.gray900,
-  },
-  subtitle: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
-    color: Colors.gray500,
-    marginTop: 1,
-  },
-  body: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-});
-
-// ─── Mini label helper ─────────────────────────────────────
-function MiniLabel({ text }: { text: string }) {
-  return <Text style={styles.miniLabel}>{text}</Text>;
-}
-
-// ─── Consistency Track ─────────────────────────────────────
-function ConsistencyTrack({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <View>
-      <View style={styles.consistRow}>
-        {[1, 2, 3, 4, 5].map((v) => (
-          <TouchableOpacity
-            key={v}
-            onPress={() => onChange(v)}
-            style={[styles.consistDot, v <= value && styles.consistDotFilled]}
-          />
-        ))}
-      </View>
-      <View style={styles.consistLabels}>
-        <View style={styles.consistLabelItem}>
-          <MaterialCommunityIcons name="cube" size={12} color={Colors.gray500} />
-          <Text style={styles.consistLabel}>Hard</Text>
-        </View>
-        <View style={styles.consistLabelItem}>
-          <Ionicons name="hand-left" size={12} color={Colors.gray500} />
-          <Text style={styles.consistLabel}>Soft</Text>
-        </View>
-        <View style={styles.consistLabelItem}>
-          <Ionicons name="water" size={12} color={Colors.gray500} />
-          <Text style={styles.consistLabel}>Watery</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ─── Color Picker ──────────────────────────────────────────
-const POOP_COLORS = [
-  { hex: '#F5C842', label: 'Yellow' },
-  { hex: '#8B5E3C', label: 'Brown'  },
-  { hex: '#4CAF50', label: 'Green'  },
-  { hex: '#E53935', label: 'Red'    },
-  { hex: '#333333', label: 'Black'  },
-];
-
-function ColorPicker({
-  selected,
-  onSelect,
-}: {
-  selected: number;
-  onSelect: (i: number) => void;
-}) {
-  return (
-    <View style={styles.colorRow}>
-      {POOP_COLORS.map((c, i) => (
-        <TouchableOpacity
-          key={i}
-          onPress={() => onSelect(i)}
-          style={styles.colorChipWrap}
-          activeOpacity={0.8}
-        >
-          <View
-            style={[
-              styles.colorChip,
-              { backgroundColor: c.hex },
-              selected === i && styles.colorChipSel,
-            ]}
-          >
-            {selected === i && <Ionicons name="checkmark" size={16} color={Colors.white} />}
-          </View>
-          <Text style={[styles.colorLabel, selected === i && styles.colorLabelSel]}>
-            {c.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-// ─── Mock Log Type ────────────────────────────────────────
-type DailyLog = {
-  id: string;
-  date: string;
-  poop?: {
-    consistency: number;
-    color: string;
-    effort: number;
-  };
-  gas?: {
-    level: number;
-    bellyFeel: number;
-  };
-  feeding?: {
-    level: number;
-    spitUp: number;
-    notes: string;
-  };
-  mood?: number;
-  timestamp: string;
-};
-
-// ─── Empty State Component ────────────────────────────────
-function EmptyState({ onAddLog }: { onAddLog: () => void }) {
-  return (
-    <View style={styles.emptyContainer}>
-      <MaterialCommunityIcons name="clipboard-text-outline" size={64} color={Colors.gray300} />
-      <Text style={styles.emptyTitle}>No logs yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Start tracking your baby's health by logging their first entry
-      </Text>
-      <TouchableOpacity
-        style={styles.emptyButton}
-        onPress={onAddLog}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add-circle" size={20} color={Colors.white} />
-        <Text style={styles.emptyButtonText}>Log Today</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ─── Log List Item Component ───────────────────────────────
-function LogListItem({ log }: { log: DailyLog }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const logDate = new Date(log.date);
-  const formattedDate = logDate.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
-
-  const getLogSummary = () => {
-    const items = [];
-    if (log.poop) items.push('🚽 Poop');
-    if (log.feeding) items.push('🍽️ Feeding');
-    if (log.gas) items.push('💨 Gas');
-    if (log.mood !== undefined) items.push('❤️ Mood');
-    return items.join(' • ');
-  };
-
-  return (
-    <TouchableOpacity
-      style={styles.logItemContainer}
-      onPress={() => setExpanded(!expanded)}
-      activeOpacity={0.8}
-    >
-      <View style={styles.logItemHeader}>
-        <View style={styles.logItemDate}>
-          <Text style={styles.logItemDateText}>{formattedDate}</Text>
-          <Text style={styles.logItemSummary}>{getLogSummary()}</Text>
-        </View>
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={20}
-          color={Colors.gray500}
-        />
-      </View>
-
-      {expanded && (
-        <View style={styles.logItemDetails}>
-          {log.poop && (
-            <View style={styles.logDetailRow}>
-              <Text style={styles.logDetailLabel}>🚽 Poop</Text>
-              <Text style={styles.logDetailValue}>
-                Consistency: {log.poop.consistency}/5 • Color: {log.poop.color} • Effort: {log.poop.effort}
-              </Text>
-            </View>
-          )}
-          {log.feeding && (
-            <View style={styles.logDetailRow}>
-              <Text style={styles.logDetailLabel}>🍽️ Feeding</Text>
-              <Text style={styles.logDetailValue}>
-                Level: {log.feeding.level}/4 • Spit up: {log.feeding.spitUp}/3
-                {log.feeding.notes ? ` • Notes: ${log.feeding.notes}` : ''}
-              </Text>
-            </View>
-          )}
-          {log.gas && (
-            <View style={styles.logDetailRow}>
-              <Text style={styles.logDetailLabel}>💨 Gas</Text>
-              <Text style={styles.logDetailValue}>
-                Level: {log.gas.level}/4 • Belly: {log.gas.bellyFeel}/3
-              </Text>
-            </View>
-          )}
-          {log.mood !== undefined && (
-            <View style={styles.logDetailRow}>
-              <Text style={styles.logDetailLabel}>❤️ Mood</Text>
-              <Text style={styles.logDetailValue}>
-                Fussiness: {log.mood}/4
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// ─── Main Screen ───────────────────────────────────────────
-export default function DailyLogScreen() {
-  const [logs, setLogs] = useState<DailyLog[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isAddingLog, setIsAddingLog] = useState(false);
-
-  // Form state for creating new log
-  const [consistency, setConsistency] = useState(2);
-  const [color, setColor] = useState(0);
-  const [effort, setEffort] = useState(1);
-  const [gasLevel, setGasLevel] = useState(0);
-  const [bellyFeel, setBellyFeel] = useState(0);
-  const [feedLevel, setFeedLevel] = useState(0);
-  const [spitUp, setSpitUp] = useState(0);
-  const [feedNotes, setFeedNotes] = useState('');
-  const [mood, setMood] = useState(0);
-
-  // Fetch logs on mount/focus
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchLogs();
-    }, [])
-  );
-
-  const fetchLogs = async () => {
-    setIsLoading(true);
-    try {
-      // TODO: Replace with API call to fetch logs from backend
-      // const response = await fetch('/api/logs');
-      // const data = await response.json();
-      // setLogs(data);
-
-      // For now, load from localStorage mock data
-      const savedLogs = localStorage?.getItem('baby_logs');
-      if (savedLogs) {
-        setLogs(JSON.parse(savedLogs));
-      } else {
-        setLogs([]);
-      }
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      setLogs([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = () => {
-    const newLog: DailyLog = {
-      id: Date.now().toString(),
-      date: new Date().toISOString().split('T')[0],
-      poop: {
-        consistency,
-        color: POOP_COLORS[color].label,
-        effort,
-      },
-      gas: {
-        level: gasLevel,
-        bellyFeel,
-      },
-      feeding: {
-        level: feedLevel,
-        spitUp,
-        notes: feedNotes.trim(),
-      },
-      mood,
-      timestamp: new Date().toISOString(),
-    };
-
-    try {
-      // TODO: Replace with API call to save log to backend
-      // await fetch('/api/logs', {
-      //   method: 'POST',
-      //   body: JSON.stringify(newLog),
-      // });
-
-      // For now, save to localStorage
-      const allLogs = [newLog, ...logs];
-      setLogs(allLogs);
-      localStorage?.setItem('baby_logs', JSON.stringify(allLogs));
-
-      Alert.alert('Success', 'Daily log saved! 🎉');
-      resetForm();
-      setIsAddingLog(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save log. Please try again.');
-      console.error('Error saving log:', error);
-    }
-  };
-
-  const resetForm = () => {
-    setConsistency(2);
-    setColor(0);
-    setEffort(1);
-    setGasLevel(0);
-    setBellyFeel(0);
-    setFeedLevel(0);
-    setSpitUp(0);
-    setFeedNotes('');
-    setMood(0);
-  };
-
-  return (
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleContainer}>
-          <MaterialCommunityIcons name="clipboard-text" size={24} color={Colors.white} />
-          <Text style={styles.headerTitle}>Daily Log</Text>
-        </View>
-        <Text style={styles.headerSub}>Track your baby's health</Text>
-      </View>
-      <View style={styles.wave} />
-
-      {/* Logs List View */}
-      {!isAddingLog ? (
-        <>
-          {logs.length === 0 ? (
-            <View style={styles.emptyScrollContainer}>
-              <EmptyState onAddLog={() => setIsAddingLog(true)} />
-            </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.logsScrollContainer}
-              showsVerticalScrollIndicator={false}
-            >
-              {logs.map((log) => (
-                <LogListItem key={log.id} log={log} />
-              ))}
-
-              {/* Add New Log Button */}
-              <TouchableOpacity
-                style={styles.addNewButton}
-                onPress={() => setIsAddingLog(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add-circle" size={20} color={Colors.white} />
-                <Text style={styles.addNewButtonText}>Log Another Day</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          )}
-        </>
-      ) : (
-        <LogFormView
-          consistency={consistency}
-          setConsistency={setConsistency}
-          color={color}
-          setColor={setColor}
-          effort={effort}
-          setEffort={setEffort}
-          gasLevel={gasLevel}
-          setGasLevel={setGasLevel}
-          bellyFeel={bellyFeel}
-          setBellyFeel={setBellyFeel}
-          feedLevel={feedLevel}
-          setFeedLevel={setFeedLevel}
-          spitUp={spitUp}
-          setSpitUp={setSpitUp}
-          feedNotes={feedNotes}
-          setFeedNotes={setFeedNotes}
-          mood={mood}
-          setMood={setMood}
-          onSubmit={handleSubmit}
-          onCancel={() => {
-            resetForm();
-            setIsAddingLog(false);
-          }}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-// ─── Log Form Component ───────────────────────────────────
-type LogFormViewProps = {
-  consistency: number;
-  setConsistency: (v: number) => void;
-  color: number;
-  setColor: (v: number) => void;
-  effort: number;
-  setEffort: (v: number) => void;
-  gasLevel: number;
-  setGasLevel: (v: number) => void;
-  bellyFeel: number;
-  setBellyFeel: (v: number) => void;
-  feedLevel: number;
-  setFeedLevel: (v: number) => void;
-  spitUp: number;
-  setSpitUp: (v: number) => void;
-  feedNotes: string;
-  setFeedNotes: (v: string) => void;
-  mood: number;
-  setMood: (v: number) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-};
-
-function LogFormView({
-  consistency,
-  setConsistency,
-  color,
-  setColor,
-  effort,
-  setEffort,
-  gasLevel,
-  setGasLevel,
-  bellyFeel,
-  setBellyFeel,
-  feedLevel,
-  setFeedLevel,
-  spitUp,
-  setSpitUp,
-  feedNotes,
-  setFeedNotes,
-  mood,
-  setMood,
-  onSubmit,
-  onCancel,
-}: LogFormViewProps) {
-  return (
-    <ScrollView
-      contentContainerStyle={styles.scroll}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Poop ── */}
-      <LogCard
-        IconComponent={MaterialCommunityIcons}
-        iconName="toilet"
-        iconBg="#FFF3E0"
-        iconColor="#8B5E3C"
-        title="Poop Tracker"
-        subtitle="Tap to log today's BM"
-        defaultExpanded
-      >
-        <MiniLabel text="Consistency" />
-        <ConsistencyTrack value={consistency} onChange={setConsistency} />
-
-        <MiniLabel text="Color" />
-        <ColorPicker selected={color} onSelect={setColor} />
-
-        <MiniLabel text="Effort Level" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'happy', label: 'Easy', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'remove', label: 'Some', color: '#FF9800' },
-            { IconComponent: Ionicons, iconName: 'sad', label: 'Hard', color: '#FF5722' },
-            { IconComponent: Ionicons, iconName: 'sad-outline', label: 'Crying', color: '#F44336' },
-          ]}
-          selected={effort}
-          onSelect={setEffort}
-        />
-      </LogCard>
-
-      {/* ── Gas ── */}
-      <LogCard
-        IconComponent={Ionicons}
-        iconName="leaf"
-        iconBg="#E3F2FD"
-        iconColor="#2196F3"
-        title="Gas & Bloating"
-        subtitle="How's the tummy feeling?"
-      >
-        <MiniLabel text="Gas Level" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'happy', label: 'None', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'remove', label: 'Some', color: '#FF9800' },
-            { IconComponent: Ionicons, iconName: 'sad', label: 'A lot', color: '#FF5722' },
-            { IconComponent: Ionicons, iconName: 'sad-outline', label: 'Tons', color: '#F44336' },
-          ]}
-          selected={gasLevel}
-          onSelect={setGasLevel}
-        />
-
-        <MiniLabel text="Belly Feel" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'flower', label: 'Soft', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'ellipse', label: 'Bloated', color: '#FF9800' },
-            { IconComponent: MaterialCommunityIcons, iconName: 'cube', label: 'Hard', color: '#FF5722' },
-          ]}
-          selected={bellyFeel}
-          onSelect={setBellyFeel}
-        />
-      </LogCard>
-
-      {/* ── Feeding ── */}
-      <LogCard
-        IconComponent={Ionicons}
-        iconName="restaurant"
-        iconBg={Colors.redPale}
-        iconColor={Colors.red}
-        title="Feeding"
-        subtitle="How did feeding go?"
-      >
-        <MiniLabel text="How did it go?" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'happy', label: 'Great', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'remove', label: 'OK', color: '#FF9800' },
-            { IconComponent: Ionicons, iconName: 'sad', label: 'Fussy', color: '#FF5722' },
-            { IconComponent: Ionicons, iconName: 'close-circle', label: 'Refused', color: '#F44336' },
-          ]}
-          selected={feedLevel}
-          onSelect={setFeedLevel}
-        />
-
-        <MiniLabel text="Spit up?" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'close-circle', label: 'None', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'water', label: 'A little', color: '#2196F3' },
-            { IconComponent: MaterialCommunityIcons, iconName: 'waves', label: 'A lot', color: '#03A9F4' },
-          ]}
-          selected={spitUp}
-          onSelect={setSpitUp}
-        />
-
-        <MiniLabel text="Notes (optional)" />
-        <TextInput
-          style={styles.notesInput}
-          value={feedNotes}
-          onChangeText={setFeedNotes}
-          placeholder="e.g. tried solids today..."
-          placeholderTextColor={Colors.gray500}
-          multiline
-        />
-      </LogCard>
-
-      {/* ── Mood ── */}
-      <LogCard
-        IconComponent={Ionicons}
-        iconName="heart"
-        iconBg="#F3EEFF"
-        iconColor="#9C27B0"
-        title="Baby's Mood"
-        subtitle="Overall how is baby feeling?"
-      >
-        <MiniLabel text="Fussiness today" />
-        <IconScale
-          options={[
-            { IconComponent: Ionicons, iconName: 'happy', label: 'Happy', color: '#4CAF50' },
-            { IconComponent: Ionicons, iconName: 'remove', label: 'OK', color: '#FF9800' },
-            { IconComponent: Ionicons, iconName: 'sad', label: 'Fussy', color: '#FF5722' },
-            { IconComponent: Ionicons, iconName: 'sad-outline', label: 'Very fussy', color: '#F44336' },
-          ]}
-          selected={mood}
-          onSelect={setMood}
-        />
-      </LogCard>
-
-      {/* ── Submit Button ── */}
-      <View style={styles.submitSection}>
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={onSubmit}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="checkmark-circle" size={24} color={Colors.white} />
-          <Text style={styles.submitButtonText}>Save Today's Log</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.resetButton}
-          onPress={onCancel}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons name="close" size={20} color={Colors.gray500} />
-          <Text style={styles.resetButtonText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
-  );
-}
-
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Colors.gray100,
-  },
-
-  // Empty State
-  emptyScrollContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  emptyTitle: {
+  quantityBox: { alignItems: 'center', minWidth: 80 },
+  quantityNum: {
     fontFamily: FontFamily.display,
-    fontSize: 26,
+    fontSize: 42,
     color: Colors.gray900,
+    lineHeight: 48,
   },
-  emptySubtitle: {
+  quantityUnit: {
     fontFamily: FontFamily.body,
-    fontSize: 16,
+    fontSize: 13,
     color: Colors.gray500,
-    textAlign: 'center',
-    lineHeight: 20,
   },
-  emptyButton: {
-    backgroundColor: Colors.red,
+  unitLabel: {
+    fontFamily: FontFamily.bodyBlack,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: Colors.gray500,
+    textTransform: 'uppercase',
+  },
+  unitRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
+  unitBtn: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 2.5,
+    borderColor: Colors.gray300,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.white,
+    shadowColor: Colors.gray300,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  unitBtnSel: {
+    borderColor: Colors.outline,
+    backgroundColor: Colors.redPale,
+    ...Shadow.sm,
+  },
+  unitBtnLabel: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 14,
+    color: Colors.gray700,
+  },
+  unitBtnLabelSel: { color: Colors.redDark },
+  unitBtnDesc: {
+    fontFamily: FontFamily.body,
+    fontSize: 9,
+    color: Colors.gray500,
+  },
+  nutritionPreview: {
+    backgroundColor: Colors.white,
+    borderWidth: 2.5,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    padding: 12,
+    gap: 8,
+    ...Shadow.sm,
+  },
+  nutritionPreviewTitle: {
+    fontFamily: FontFamily.bodyBlack,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: Colors.gray500,
+    textTransform: 'uppercase',
+  },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF3E0',
+    borderRadius: Radius.pill,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.outline,
+  },
+  pillText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 11,
+    color: Colors.gray700,
+  },
+  btnRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.white,
+    ...Shadow.sm,
+  },
+  cancelBtnText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 15,
+    color: Colors.gray700,
+  },
+  confirmBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.red,
+    ...Shadow.md,
+  },
+  confirmBtnText: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 15,
+    color: Colors.white,
+  },
+  quickAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: Radius.lg,
-    marginTop: 8,
+    backgroundColor: Colors.green,
+    borderRadius: Radius.pill,
     borderWidth: 3,
     borderColor: Colors.outline,
     ...Shadow.md,
+    marginVertical: 8,
   },
-  emptyButtonText: {
+  quickAddText: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 18,
+    fontSize: 15,
     color: Colors.white,
   },
-
-  // Logs List
-  logsScrollContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 32,
-    gap: 12,
+  orText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray500,
+    textAlign: 'center',
+    marginVertical: 4,
   },
-  logItemContainer: {
+});
+
+// ─── Food Tag Item ──────────────────────────────────────────
+function FoodTagItem({
+  tag, onRemove,
+}: {
+  tag: FoodTag;
+  onRemove: (id: string) => void;
+}) {
+  const scaled = scaleNutrition(tag.nutrition, tag.gramsEst);
+  return (
+    <View style={tagStyles.tag}>
+      <View style={tagStyles.tagRow}>
+        <View style={tagStyles.tagIconBox}>
+          <Ionicons name="restaurant" size={14} color={Colors.red} />
+        </View>
+        <View style={tagStyles.tagInfo}>
+          <Text style={tagStyles.tagName}>{tag.name}</Text>
+          <Text style={tagStyles.tagQty}>
+            {tag.quantity} {tag.unit} · ~{Math.round(tag.gramsEst)}g
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => onRemove(tag.id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="close-circle" size={20} color={Colors.gray500} />
+        </TouchableOpacity>
+      </View>
+
+      {scaled && (
+        <View style={tagStyles.pillRow}>
+          {scaled.calories !== null && (
+            <View style={tagStyles.pill}>
+              <Ionicons name="flame-outline" size={10} color={Colors.gray700} />
+              <Text style={tagStyles.pillText}>{scaled.calories}kcal</Text>
+            </View>
+          )}
+          {scaled.fiber !== null && (
+            <View style={[tagStyles.pill, { backgroundColor: Colors.greenPale }]}>
+              <Ionicons name="leaf-outline" size={10} color={Colors.gray700} />
+              <Text style={tagStyles.pillText}>{scaled.fiber}g fiber</Text>
+            </View>
+          )}
+          {scaled.sugar !== null && (
+            <View style={[tagStyles.pill, { backgroundColor: Colors.yellowPale }]}>
+              <Ionicons name="cube-outline" size={10} color={Colors.gray700} />
+              <Text style={tagStyles.pillText}>{scaled.sugar}g sugar</Text>
+            </View>
+          )}
+          {scaled.protein !== null && (
+            <View style={[tagStyles.pill, { backgroundColor: Colors.redPale }]}>
+              <Ionicons name="barbell-outline" size={10} color={Colors.gray700} />
+              <Text style={tagStyles.pillText}>{scaled.protein}g protein</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const tagStyles = StyleSheet.create({
+  tag: {
+    backgroundColor: Colors.white,
+    borderWidth: 2.5,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    padding: 10,
+    gap: 8,
+    ...Shadow.sm,
+  },
+  tagRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tagIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: Colors.redPale,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tagInfo: { flex: 1 },
+  tagName: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 13,
+    color: Colors.gray900,
+  },
+  tagQty: {
+    fontFamily: FontFamily.body,
+    fontSize: 11,
+    color: Colors.gray500,
+    marginTop: 1,
+  },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FFF3E0',
+    borderRadius: Radius.pill,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderWidth: 1.5,
+    borderColor: Colors.outline,
+  },
+  pillText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 10,
+    color: Colors.gray700,
+  },
+});
+
+// ─── Food Search Section ────────────────────────────────────
+function FoodSearchSection({
+  foodTags, onAdd, onRemove,
+}: {
+  foodTags: FoodTag[];
+  onAdd: (tag: FoodTag) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [query,       setQuery]       = useState('');
+  const [results,     setResults]     = useState<any[]>([]);
+  const [searching,   setSearching]   = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [pending,     setPending]     = useState<{ name: string; nutrition: NutritionInfo | null } | null>(null);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    setShowResults(true);
+    try {
+      const res  = await fetch(`${SERVER}/nutrition/search?query=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      setResults(data.results || []);
+    } catch {
+      setResults([]);
+    }
+    setSearching(false);
+  };
+
+  const handleSelect = (result: any) => {
+    setPending({
+      name: result.name,
+      nutrition: result.calories !== null ? {
+        calories: result.calories,
+        fiber:    result.fiber,
+        sugar:    result.sugar,
+        protein:  result.protein,
+      } : null,
+    });
+    setResults([]);
+    setShowResults(false);
+    setQuery('');
+  };
+
+  const handleConfirm = (quantity: number, unit: string) => {
+    if (!pending) return;
+    const grams = quantity * (UNIT_TO_GRAMS[unit] ?? 30);
+    onAdd({
+      id:        Date.now().toString(),
+      name:      pending.name,
+      quantity,
+      unit,
+      gramsEst:  grams,
+      nutrition: pending.nutrition,
+    });
+    setPending(null);
+  };
+
+  // Totals
+  const totals = foodTags.reduce(
+    (acc, t) => {
+      const s = scaleNutrition(t.nutrition, t.gramsEst);
+      return {
+        calories: acc.calories + (s?.calories ?? 0),
+        fiber:    acc.fiber    + (s?.fiber    ?? 0),
+        sugar:    acc.sugar    + (s?.sugar    ?? 0),
+        protein:  acc.protein  + (s?.protein  ?? 0),
+      };
+    },
+    { calories: 0, fiber: 0, sugar: 0, protein: 0 }
+  );
+
+  return (
+    <View style={searchStyles.wrap}>
+      {/* Search bar */}
+      <View style={searchStyles.row}>
+        <TextInput
+          style={searchStyles.input}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search food (e.g. oatmeal, banana...)"
+          placeholderTextColor={Colors.gray500}
+          returnKeyType="search"
+          onSubmitEditing={handleSearch}
+        />
+        <TouchableOpacity style={searchStyles.btn} onPress={handleSearch} activeOpacity={0.8}>
+          {searching
+            ? <ActivityIndicator size="small" color={Colors.white} />
+            : <Ionicons name="search" size={18} color={Colors.white} />
+          }
+        </TouchableOpacity>
+      </View>
+
+      {/* Results dropdown */}
+      {showResults && (
+        <View style={searchStyles.dropdown}>
+          {searching && (
+            <View style={searchStyles.loadingRow}>
+              <ActivityIndicator size="small" color={Colors.red} />
+              <Text style={searchStyles.loadingText}>Searching...</Text>
+            </View>
+          )}
+          {!searching && results.length > 0 && results.map((r, i) => (
+            <TouchableOpacity
+              key={i}
+              onPress={() => handleSelect(r)}
+              style={[searchStyles.dropdownItem, i < results.length - 1 && searchStyles.dropdownBorder]}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={16} color={Colors.red} />
+              <Text style={searchStyles.dropdownName} numberOfLines={1}>{r.name}</Text>
+              {r.calories !== null && (
+                <Text style={searchStyles.dropdownCal}>{Math.round(r.calories / 2)}kcal/srv</Text>
+              )}
+            </TouchableOpacity>
+          ))}
+          {!searching && results.length === 0 && (
+            <TouchableOpacity
+              style={searchStyles.dropdownItem}
+              onPress={() => handleSelect({ name: query, calories: null, fiber: null, sugar: null, protein: null })}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={16} color={Colors.red} />
+              <Text style={searchStyles.dropdownName}>Add "{query}" manually</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setShowResults(false)} style={searchStyles.dismiss}>
+            <Text style={searchStyles.dismissText}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Food tags */}
+      {foodTags.length > 0 && (
+        <View style={searchStyles.tagList}>
+          <MiniLabel text={`${foodTags.length} food${foodTags.length > 1 ? 's' : ''} added`} />
+          {foodTags.map((tag) => (
+            <FoodTagItem key={tag.id} tag={tag} onRemove={onRemove} />
+          ))}
+        </View>
+      )}
+
+      {/* Totals summary */}
+      {foodTags.length > 0 && (
+        <View style={searchStyles.totalsCard}>
+          <Text style={searchStyles.totalsTitle}>Today's Nutrition Totals</Text>
+          <View style={searchStyles.totalsRow}>
+            {[
+              { label: 'Calories', icon: 'flame-outline'   as const, value: totals.calories,            unit: 'kcal', color: Colors.red     },
+              { label: 'Fiber',    icon: 'leaf-outline'    as const, value: +totals.fiber.toFixed(1),   unit: 'g',    color: Colors.green   },
+              { label: 'Sugar',    icon: 'cube-outline'    as const, value: +totals.sugar.toFixed(1),   unit: 'g',    color: Colors.yellow  },
+              { label: 'Protein',  icon: 'barbell-outline' as const, value: +totals.protein.toFixed(1), unit: 'g',    color: Colors.gray700 },
+            ].map((stat, i) => (
+              <View key={i} style={searchStyles.totalStat}>
+                <Ionicons name={stat.icon} size={16} color={stat.color} />
+                <Text style={searchStyles.totalValue}>{stat.value}</Text>
+                <Text style={searchStyles.totalUnit}>{stat.unit}</Text>
+                <Text style={searchStyles.totalLabel}>{stat.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Quantity prompt modal */}
+      {pending && (
+        <QuantityPrompt
+          food={pending}
+          onConfirm={handleConfirm}
+          onCancel={() => setPending(null)}
+        />
+      )}
+    </View>
+  );
+}
+
+const searchStyles = StyleSheet.create({
+  wrap: { gap: 10 },
+  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  input: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.gray900,
+    ...Shadow.sm,
+  },
+  btn: {
+    width: 46,
+    height: 46,
+    backgroundColor: Colors.red,
+    borderRadius: Radius.lg,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadow.sm,
+  },
+  dropdown: {
     backgroundColor: Colors.white,
     borderWidth: 3,
     borderColor: Colors.outline,
@@ -834,95 +839,292 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...Shadow.md,
   },
-  logItemHeader: {
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14 },
+  loadingText: { fontFamily: FontFamily.body, fontSize: 13, color: Colors.gray500 },
+  dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
-  logItemDate: {
-    flex: 1,
+  dropdownBorder: { borderBottomWidth: 1.5, borderBottomColor: Colors.gray200 },
+  dropdownName: { fontFamily: FontFamily.bodyBold, fontSize: 13, color: Colors.gray900, flex: 1 },
+  dropdownCal:  { fontFamily: FontFamily.body, fontSize: 11, color: Colors.gray500 },
+  dismiss: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderTopWidth: 1.5,
+    borderTopColor: Colors.gray200,
+    backgroundColor: Colors.gray100,
   },
-  logItemDateText: {
-    fontFamily: FontFamily.bodyBold,
-    fontSize: 16,
-    color: Colors.gray900,
-  },
-  logItemSummary: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
-    color: Colors.gray500,
-    marginTop: 3,
-  },
-  logItemDetails: {
-    borderTopWidth: 2,
-    borderTopColor: Colors.gray100,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+  dismissText: { fontFamily: FontFamily.bodyBold, fontSize: 12, color: Colors.gray500 },
+  tagList: { gap: 8 },
+  totalsCard: {
+    backgroundColor: Colors.gray100,
+    borderWidth: 2.5,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    padding: 12,
     gap: 10,
   },
-  logDetailRow: {
-    gap: 6,
-  },
-  logDetailLabel: {
-    fontFamily: FontFamily.bodyBold,
-    fontSize: 14,
-    color: Colors.gray900,
-  },
-  logDetailValue: {
-    fontFamily: FontFamily.body,
-    fontSize: 14,
+  totalsTitle: {
+    fontFamily: FontFamily.bodyBlack,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
     color: Colors.gray700,
-    lineHeight: 18,
   },
+  totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  totalStat: { alignItems: 'center', gap: 2, flex: 1 },
+  totalValue: { fontFamily: FontFamily.display, fontSize: 18, color: Colors.gray900 },
+  totalUnit:  { fontFamily: FontFamily.body, fontSize: 10, color: Colors.gray500 },
+  totalLabel: {
+    fontFamily: FontFamily.bodyBlack,
+    fontSize: 9,
+    color: Colors.gray500,
+    textTransform: 'uppercase',
+  },
+});
 
-  // Add New Button
-  addNewButton: {
-    backgroundColor: Colors.red,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: Radius.lg,
-    borderWidth: 3,
-    borderColor: Colors.outline,
-    ...Shadow.md,
-    marginTop: 12,
-  },
-  addNewButtonText: {
-    fontFamily: FontFamily.displayBold,
-    fontSize: 18,
-    color: Colors.white,
-  },
+// ─── Main Screen ───────────────────────────────────────────
+export default function DailyLogScreen() {
+  const [stoolType, setStoolType] = useState<number | null>(null);
+  const [frequency, setFrequency] = useState(0);
+  const [hydration, setHydration] = useState<number | null>(null);
+  const [foodTags,  setFoodTags]  = useState<FoodTag[]>([]);
+  const [saved,     setSaved]     = useState(false);
+  const [saving,    setSaving]    = useState(false);
 
-  // Header
+  const addFoodTag    = (tag: FoodTag) => setFoodTags((prev) => [...prev, tag]);
+  const removeFoodTag = (id: string)   => setFoodTags((prev) => prev.filter((t) => t.id !== id));
+
+  const handleSave = async () => {
+    if (stoolType === null || hydration === null) {
+      Alert.alert('Missing info', 'Please select a stool type and hydration level.', [{ text: 'OK' }]);
+      return;
+    }
+    setSaving(true);
+
+    const logEntry = {
+      date:           new Date().toISOString(),
+      stoolType,
+      stoolFrequency: frequency,
+      hydration:      HYDRATION_OPTIONS[hydration].label,
+      foodIntake:     foodTags.map((t) => ({
+        name:      t.name,
+        quantity:  t.quantity,
+        unit:      t.unit,
+        gramsEst:  t.gramsEst,
+        nutrition: scaleNutrition(t.nutrition, t.gramsEst),
+      })),
+    };
+
+    // TODO: POST logEntry to database
+    console.log('Saving log entry:', JSON.stringify(logEntry, null, 2));
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    setSaving(false);
+    setSaved(true);
+  };
+
+  const handleReset = () => {
+    setStoolType(null);
+    setFrequency(0);
+    setHydration(null);
+    setFoodTags([]);
+    setSaved(false);
+  };
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>Daily Log</Text>
+            <Text style={styles.headerSub}>
+              Maya · {new Date().toLocaleDateString('en-US', {
+                weekday: 'long', month: 'short', day: 'numeric',
+              })}
+            </Text>
+          </View>
+          <View style={styles.headerIcon}>
+            <Ionicons name="clipboard-outline" size={26} color={Colors.white} />
+          </View>
+        </View>
+      </View>
+      <View style={styles.wave} />
+
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* ── 1. Stool Type ── */}
+        <SectionCard iconName="medical-outline" title="Stool Type">
+          <MiniLabel text="Bristol Stool Scale — select today's type" />
+          <View style={styles.stoolGrid}>
+            {STOOL_TYPES.map((s) => (
+              <TouchableOpacity
+                key={s.type}
+                onPress={() => setStoolType(s.type)}
+                style={[styles.stoolBtn, stoolType === s.type && styles.stoolBtnSel]}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.stoolDot, { backgroundColor: stoolColor(s.type) }]} />
+                <Text style={[styles.stoolLabel, stoolType === s.type && styles.stoolLabelSel]}>
+                  {s.label}
+                </Text>
+                <Text style={styles.stoolDesc}>{s.desc}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {stoolType !== null && (
+            <View style={[
+              styles.hintBox,
+              stoolType <= 2                           && { backgroundColor: '#FFF3E0'      },
+              stoolType >= 3 && stoolType <= 5         && { backgroundColor: Colors.greenPale },
+              stoolType >= 6                           && { backgroundColor: Colors.redPale  },
+            ]}>
+              <Ionicons
+                name={stoolType <= 2 || stoolType >= 6 ? 'warning-outline' : 'checkmark-circle-outline'}
+                size={14}
+                color={stoolType <= 2 ? '#F5A623' : stoolType >= 6 ? Colors.red : Colors.green}
+              />
+              <Text style={styles.hintText}>
+                {stoolType <= 2 && 'Types 1–2 may indicate constipation. Consider more fluids and fiber.'}
+                {stoolType === 3 && 'Type 3 is on the firmer side but within normal range.'}
+                {stoolType === 4 && 'Type 4 is ideal — smooth and easy to pass.'}
+                {stoolType === 5 && 'Type 5 is normal, slightly soft.'}
+                {stoolType >= 6 && 'Types 6–7 may indicate diarrhea. Monitor hydration closely.'}
+              </Text>
+            </View>
+          )}
+        </SectionCard>
+
+        {/* ── 2. Stool Frequency ── */}
+        <SectionCard iconName="repeat-outline" title="Stool Frequency">
+          <MiniLabel text="How many times today?" />
+          <View style={styles.freqRow}>
+            <TouchableOpacity
+              onPress={() => setFrequency(Math.max(0, frequency - 1))}
+              style={styles.freqBtn} activeOpacity={0.8}
+            >
+              <Ionicons name="remove" size={24} color={Colors.white} />
+            </TouchableOpacity>
+            <View style={styles.freqDisplay}>
+              <Text style={styles.freqNumber}>{frequency}</Text>
+              <Text style={styles.freqUnit}>times</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setFrequency(frequency + 1)}
+              style={styles.freqBtn} activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={24} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
+          {frequency === 0 && (
+            <View style={styles.hintBox}>
+              <Ionicons name="information-circle-outline" size={14} color={Colors.gray500} />
+              <Text style={styles.hintText}>
+                No bowel movement today — worth noting if this continues for 2+ days.
+              </Text>
+            </View>
+          )}
+        </SectionCard>
+
+        {/* ── 3. Hydration ── */}
+        <SectionCard iconName="water-outline" title="Hydration">
+          <MiniLabel text="How much did Maya drink today?" />
+          <View style={styles.hydrationRow}>
+            {HYDRATION_OPTIONS.map((opt, i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => setHydration(i)}
+                style={[styles.hydrationBtn, hydration === i && styles.hydrationBtnSel]}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={opt.icon} size={24} color={hydration === i ? Colors.red : Colors.gray500} />
+                <Text style={[styles.hydrationLabel, hydration === i && styles.hydrationLabelSel]}>
+                  {opt.label}
+                </Text>
+                <Text style={styles.hydrationDesc}>{opt.desc}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SectionCard>
+
+        {/* ── 4. Food Intake ── */}
+        <SectionCard iconName="restaurant-outline" title="Food Intake">
+          <MiniLabel text="What did Maya eat today?" />
+          <FoodSearchSection
+            foodTags={foodTags}
+            onAdd={addFoodTag}
+            onRemove={removeFoodTag}
+          />
+          <View style={styles.hintBox}>
+            <Ionicons name="bulb-outline" size={14} color={Colors.gray500} />
+            <Text style={styles.hintText}>
+              Note any new foods — we'll watch for reactions over 72 hours
+            </Text>
+          </View>
+        </SectionCard>
+
+        {/* ── Save / Saved ── */}
+        {!saved ? (
+          <TouchableOpacity
+            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            onPress={handleSave}
+            activeOpacity={0.85}
+            disabled={saving}
+          >
+            <Ionicons name={saving ? 'hourglass-outline' : 'save-outline'} size={20} color={Colors.white} />
+            <Text style={styles.saveBtnText}>{saving ? 'Saving...' : "Save Today's Log"}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.savedCard}>
+            <Ionicons name="checkmark-circle" size={48} color={Colors.green} />
+            <Text style={styles.savedTitle}>Log saved!</Text>
+            <Text style={styles.savedDesc}>
+              Great job tracking today. Check the dashboard for AI insights based on Maya's patterns.
+            </Text>
+            <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
+              <Ionicons name="add-circle-outline" size={16} color={Colors.gray900} />
+              <Text style={styles.resetBtnText}>Log another entry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.gray100 },
   header: {
     backgroundColor: Colors.red,
     paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 44,
   },
-  headerTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: {
     fontFamily: FontFamily.display,
-    fontSize: 28,
+    fontSize: 26,
     color: Colors.white,
     textShadowColor: 'rgba(0,0,0,0.15)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
   },
-  headerSub: {
-    fontFamily: FontFamily.body,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 4,
+  headerSub: { fontFamily: FontFamily.body, fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   wave: {
     height: 32,
@@ -931,137 +1133,135 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     marginTop: -24,
   },
-
-  // Scroll
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 32,
-    gap: 12,
-  },
-
-  // Mini label
+  scroll: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32, gap: 14 },
   miniLabel: {
     fontFamily: FontFamily.bodyBlack,
-    fontSize: 12,
+    fontSize: 10,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     color: Colors.gray500,
-    marginBottom: 8,
-    marginTop: 12,
+    marginBottom: 6,
   },
 
-  // Consistency track
-  consistRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  consistDot: {
+  // Stool
+  stoolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  stoolBtn: {
     flex: 1,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: Colors.outline,
-    backgroundColor: Colors.white,
-  },
-  consistDotFilled: { backgroundColor: Colors.red },
-  consistLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 5,
-  },
-  consistLabelItem: {
-    flexDirection: 'row',
+    minWidth: 44,
     alignItems: 'center',
-    gap: 2,
-  },
-  consistLabel: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 11,
-    color: Colors.gray500,
-  },
-
-  // Color picker
-  colorRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  colorChipWrap: { alignItems: 'center', gap: 4 },
-  colorChip: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    paddingVertical: 10,
     borderWidth: 2.5,
-    borderColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  colorChipSel: { borderColor: Colors.outline },
-  colorLabel: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 10,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-  },
-  colorLabelSel: { color: Colors.gray900 },
-
-  // Notes input
-  notesInput: {
+    borderColor: Colors.gray300,
+    borderRadius: Radius.md,
     backgroundColor: Colors.white,
+    shadowColor: Colors.gray300,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+    gap: 4,
+  },
+  stoolBtnSel: { borderColor: Colors.outline, backgroundColor: Colors.redPale, ...Shadow.sm },
+  stoolDot:    { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: Colors.outline },
+  stoolLabel:  { fontFamily: FontFamily.bodyBold, fontSize: 10, color: Colors.gray700 },
+  stoolLabelSel: { color: Colors.redDark },
+  stoolDesc:   { fontFamily: FontFamily.body, fontSize: 8, color: Colors.gray500, textAlign: 'center' },
+
+  // Hint
+  hintBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: Colors.gray100,
+    borderRadius: Radius.md,
+    padding: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.gray300,
+  },
+  hintText: { fontFamily: FontFamily.body, fontSize: 12, color: Colors.gray700, lineHeight: 18, flex: 1 },
+
+  // Frequency
+  freqRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
+  freqBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.red,
     borderWidth: 3,
     borderColor: Colors.outline,
-    borderRadius: Radius.lg,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontFamily: FontFamily.body,
-    fontSize: 14,
-    color: Colors.gray900,
-    minHeight: 70,
-    textAlignVertical: 'top',
+    alignItems: 'center',
+    justifyContent: 'center',
     ...Shadow.sm,
   },
+  freqDisplay: { alignItems: 'center', minWidth: 80 },
+  freqNumber:  { fontFamily: FontFamily.display, fontSize: 48, color: Colors.gray900, lineHeight: 54 },
+  freqUnit:    { fontFamily: FontFamily.body, fontSize: 12, color: Colors.gray500 },
 
-  // Submit Section
-  submitSection: {
-    marginTop: 8,
-    gap: 12,
-  },
-  submitButton: {
-    backgroundColor: Colors.red,
-    flexDirection: 'row',
+  // Hydration
+  hydrationRow: { flexDirection: 'row', gap: 8 },
+  hydrationBtn: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 12,
+    borderWidth: 3,
+    borderColor: Colors.gray300,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.white,
+    gap: 4,
+    shadowColor: Colors.gray300,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
+  },
+  hydrationBtnSel:   { borderColor: Colors.outline, backgroundColor: Colors.redPale, ...Shadow.sm },
+  hydrationLabel:    { fontFamily: FontFamily.bodyBold, fontSize: 13, color: Colors.gray900 },
+  hydrationLabelSel: { fontFamily: FontFamily.displayBold, color: Colors.redDark },
+  hydrationDesc:     { fontFamily: FontFamily.body, fontSize: 10, color: Colors.gray500 },
+
+  // Save
+  saveBtn: {
+    width: '100%',
     paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: Radius.xl,
-    gap: 8,
+    backgroundColor: Colors.red,
+    borderRadius: Radius.pill,
     borderWidth: 3,
     borderColor: Colors.outline,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    ...Shadow.md,
+    marginTop: 4,
+  },
+  saveBtnDisabled: { backgroundColor: Colors.gray300, borderColor: Colors.gray500 },
+  saveBtnText:     { fontFamily: FontFamily.displayBold, fontSize: 16, color: Colors.white },
+
+  // Saved
+  savedCard: {
+    backgroundColor: Colors.greenPale,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.xl,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
     ...Shadow.md,
   },
-  submitButtonText: {
-    fontFamily: FontFamily.displayBold,
-    fontSize: 20,
-    color: Colors.white,
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 0,
-  },
-  resetButton: {
-    backgroundColor: Colors.white,
+  savedTitle: { fontFamily: FontFamily.display, fontSize: 22, color: Colors.gray900 },
+  savedDesc:  { fontFamily: FontFamily.body, fontSize: 13, color: Colors.gray700, textAlign: 'center', lineHeight: 20 },
+  resetBtn: {
+    marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: Radius.lg,
     gap: 6,
-    borderWidth: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: Colors.white,
+    borderWidth: 2.5,
     borderColor: Colors.outline,
+    borderRadius: Radius.pill,
+    ...Shadow.sm,
   },
-  resetButtonText: {
-    fontFamily: FontFamily.bodyBold,
-    fontSize: 16,
-    color: Colors.gray500,
-  },
+  resetBtnText: { fontFamily: FontFamily.bodyBold, fontSize: 13, color: Colors.gray900 },
 });

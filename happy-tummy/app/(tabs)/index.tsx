@@ -10,7 +10,7 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { ChildResponse, getMe, listChildren } from '@/lib/api';
+import { getMe, listChildren, type ChildResponse } from '@/lib/api';
 
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
@@ -57,24 +57,12 @@ export default function DashboardScreen() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-
-    const load = async () => {
-      try {
-        const [me, kids] = await Promise.all([getMe(), listChildren()]);
-        if (!isMounted) return;
-        setParentName(me.first_name ?? me.username);
-        setChildren(kids);
-      } catch {
-        if (!isMounted) return;
-        setChildren([]);
-      }
-    };
-
-    load();
-    return () => {
-      isMounted = false;
-    };
+    getMe()
+      .then((user) => setParentName(user.first_name))
+      .catch(() => {});
+    listChildren()
+      .then(setChildren)
+      .catch(() => {});
   }, []);
 
   const handleAddBaby = () => {
@@ -91,6 +79,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {/* Red header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View>
@@ -108,6 +97,7 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Baby profiles ── */}
         <Text style={styles.sectionTitle}>Your Babies</Text>
 
         {children.length === 0 && (
@@ -137,6 +127,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
 
+        {/* Add baby */}
         <TouchableOpacity
           style={styles.addCard}
           activeOpacity={0.8}

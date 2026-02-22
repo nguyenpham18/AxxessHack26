@@ -22,8 +22,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     let message = 'Request failed';
     try {
-      const data = (await response.json()) as { detail?: string };
-      if (data?.detail) message = data.detail;
+      const data = (await response.json()) as { detail?: unknown };
+      if (typeof data?.detail === 'string') {
+        message = data.detail;
+      } else if (Array.isArray(data?.detail)) {
+        message = data.detail.map((e: any) => e.msg ?? JSON.stringify(e)).join(', ');
+      }
     } catch {
       // ignore parse errors
     }
