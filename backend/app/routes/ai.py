@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1"
 FEATHERLESS_API_KEY = settings.featherless_api_key
 FEATHERLESS_MODEL = settings.featherless_model
-USDA_API_KEY = settings.usda_api_key
+SPOONACULAR_KEY = settings.spoonacular_key
 
 
 async def call_featherless(messages: List[Dict[str, str]], max_tokens: int = 350, temperature: float = 0.2) -> str:
@@ -171,88 +171,81 @@ RECENT DIGESTION LOGS (most recent last):
 
 @router.get("/nutrition/search")
 async def search_nutrition(query: str) -> Dict[str, List[Dict[str, Any]]]:
-    """Search USDA FDC database for food nutrition information."""
+    """Search Spoonacular for food nutrition information."""
     if not query:
         raise HTTPException(status_code=400, detail="Missing query")
-    
-    if not USDA_API_KEY:
-        raise HTTPException(status_code=500, detail="USDA API key not configured")
 
-    url = (
-        f"https://api.nal.usda.gov/fdc/v1/foods/search"
-        f"?query={query}"
-        f"&api_key={USDA_API_KEY}"
-        f"&dataType=Foundation,SR%20Legacy"
-        f"&pageSize=5"
-        f"&requireAllWords=true"
+    if not SPOONACULAR_KEY:
+        raise HTTPException(status_code=500, detail="Spoonacular API key not configured")
+
+    search_url = (
+        f"https://api.spoonacular.com/food/ingredients/search"
+        f"?query={query}&number=5&apiKey={SPOONACULAR_KEY}"
     )
+
+    def get_available_units(description: str) -> List[str]:
+        desc = description.lower()
+        if any(x in desc for x in ["juice", "milk", "water"]):
+            return ["ml", "fl oz", "cup"]
+        if any(x in desc for x in ["cereal", "powder"]):
+            return ["g", "tbsp", "tsp"]
+        if any(x in desc for x in ["fruit", "vegetable"]):
+            return ["g", "oz", "piece", "slice"]
+        if "babyfood" in desc:
+            return ["g", "jar", "tbsp"]
+        return ["g", "oz", "tbsp", "tsp"]
+
+    async def fetch_detail(client: httpx.AsyncClient, ingredient_id: int) -> Dict[str, Any]:
+        try:
+            url = (
+                f"https://api.spoonacular.com/food/ingredients/{ingredient_id}/information"
+                f"?amount=100&unit=grams&apiKey={SPOONACULAR_KEY}"
+            )
+            resp = await client.get(url, timeout=4.0)
+            if resp.status_code != 200:
+                return {}
+            info = resp.json()
+            nutrients = info.get("nutrition", {}).get("nutrients", [])
+            def find(name: str) -> Optional[float]:
+                for n in nutrients:
+                    if n.get("name", "").lower() == name.lower():
+                        return n.get("amount")
+                return None
+            return {"calories": find("Calories"), "fiber": find("Fiber"), "sugar": find("Sugar"), "protein": find("Protein"), "water": find("Water")}
+        except Exception:
+            return {}
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
-            
+            response = await client.get(search_url, timeout=8.0)
             if response.status_code != 200:
-                error_text = response.text
-                raise HTTPException(status_code=500, detail=f"USDA API error: {error_text}")
-            
+                raise HTTPException(status_code=500, detail=f"Spoonacular error: {response.text}")
+
             data = response.json()
-            foods = data.get("foods", [])
+            items = data.get("results", [])
 
-            def get_nutrient(food: Dict, nutrient_id: int) -> Optional[float]:
-                """Extract nutrient value by ID."""
-                nutrients = food.get("foodNutrients", [])
-                for n in nutrients:
-                    if n.get("nutrientId") == nutrient_id:
-                        return n.get("value")
-                return None
+            import asyncio
+            nutrition_data = await asyncio.gather(
+                *[fetch_detail(client, item.get("id")) for item in items]
+            )
 
-            def get_default_serving(description: str) -> Dict[str, Any]:
-                """Get default serving size based on food description."""
-                desc = description.lower()
-                if "babyfood" in desc or "baby" in desc:
-                    return {"size": 113, "unit": "g"}  # Standard baby food jar
-                if "juice" in desc:
-                    return {"size": 240, "unit": "ml"}  # 1 cup
-                if "cereal" in desc:
-                    return {"size": 15, "unit": "g"}  # 1 tbsp
-                if "fruit" in desc:
-                    return {"size": 28, "unit": "g"}  # 1 oz
-                return {"size": food.get("servingSize", 100), "unit": food.get("servingSizeUnit", "g")}
-
-            def get_available_units(description: str) -> List[str]:
-                """Get appropriate serving units based on food type."""
-                desc = description.lower()
-                if any(x in desc for x in ["juice", "milk", "water"]):
-                    return ["ml", "fl oz", "cup"]
-                if any(x in desc for x in ["cereal", "powder"]):
-                    return ["g", "tbsp", "tsp"]
-                if any(x in desc for x in ["fruit", "vegetable"]):
-                    return ["g", "oz", "piece", "slice"]
-                if "babyfood" in desc:
-                    return ["g", "jar", "tbsp"]
-                return ["g", "oz", "tbsp", "tsp"]
-
-            results = []
-            for food in foods:
-                default_serving = get_default_serving(food.get("description", ""))
-                
-                result = {
-                    "name": food.get("description"),
-                    "fdcId": food.get("fdcId"),
-                    "calories": get_nutrient(food, 1008),
-                    "fiber": get_nutrient(food, 1079),
-                    "sugar": get_nutrient(food, 2000),
-                    "protein": get_nutrient(food, 1003),
-                    "water": get_nutrient(food, 1051),
-                    "defaultServingSize": default_serving["size"],
-                    "defaultUnit": default_serving["unit"],
-                    "availableUnits": get_available_units(food.get("description", "")),
+            results = [
+                {
+                    "name": item.get("name", "").capitalize(),
+                    "fdcId": item.get("id"),
+                    "calories": nutrition_data[i].get("calories"),
+                    "fiber": nutrition_data[i].get("fiber"),
+                    "sugar": nutrition_data[i].get("sugar"),
+                    "protein": nutrition_data[i].get("protein"),
+                    "water": nutrition_data[i].get("water"),
+                    "availableUnits": get_available_units(item.get("name", "")),
                 }
-                results.append(result)
+                for i, item in enumerate(items)
+            ]
 
             return {"results": results}
 
     except httpx.RequestError as e:
-        raise HTTPException(status_code=500, detail=f"USDA search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Spoonacular search failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Nutrition search error: {str(e)}")

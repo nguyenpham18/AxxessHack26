@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     featherless_api_key: str | None = Field(default=None, validation_alias=AliasChoices("featherless_api_key", "FEATHERLESS_API_KEY"))
     featherless_model: str | None = Field(default=None, validation_alias=AliasChoices("featherless_model", "FEATHERLESS_MODEL"))
-    usda_api_key: str | None = Field(default=None, validation_alias=AliasChoices("usda_api_key", "USDA_API_KEY"))
+    spoonacular_key: str | None = Field(default=None, validation_alias=AliasChoices("spoonacular_key", "SPOONACULAR_KEY"))
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
