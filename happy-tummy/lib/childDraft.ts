@@ -1,6 +1,7 @@
 export type ChildDraft = {
   name?: string;
   dob?: string;
+  ageMonths?: number | null;
   gender?: string;
   weight?: number | null;
   allergies?: boolean | null;

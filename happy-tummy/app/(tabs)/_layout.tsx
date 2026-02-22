@@ -89,6 +89,12 @@ export default function TabsLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="child-profile"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

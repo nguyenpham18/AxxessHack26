@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { getMe } from '@/lib/api';
 import { router } from 'expo-router';
 
@@ -202,6 +202,12 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Health & Data</Text>
           <View style={styles.optionsContainer}>
+            <ProfileOption
+              icon="happy-outline"
+              title="Child Profile"
+              subtitle="Summary and meal plan"
+              onPress={() => router.push('/(tabs)/child-profile')}
+            />
             <ProfileOption
               icon="fitness-outline"
               title="Health Goals"

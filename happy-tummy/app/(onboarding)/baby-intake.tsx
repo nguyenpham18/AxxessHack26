@@ -275,9 +275,11 @@ export default function BabyIntakeScreen() {
 
               try {
                 const draft = getChildDraft();
+                const computedAge = draft.ageMonths ?? (draft.dob ? calculateAgeInMonths(draft.dob) : null);
+                const fallbackAge = ageRange === '6to12' ? 9 : ageRange === '12to24' ? 18 : null;
                 await createChild({
                   name: draft.name ?? 'Baby',
-                  age: null,
+                  age: computedAge ?? fallbackAge,
                   gender: draft.gender ?? null,
                   weight: draft.weight ?? null,
                   allergies: draft.allergies ? 1 : 0,

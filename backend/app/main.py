@@ -6,9 +6,12 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
 from app.models import happytummy_schema
+from app.models import logs as logs_model
+from app.models import meal_info as meal_info_model
 from app.models.user import User
 from app.routes.auth import router as auth_router
 from app.routes.children import router as children_router
+from app.routes.logs import router as logs_router
 from app.routes.ai import router as ai_router
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -50,3 +53,4 @@ ensure_schema_compatibility()
 app.include_router(children_router, prefix="/api", tags=["children"])
 app.include_router(auth_router, prefix="/api")
 app.include_router(ai_router, tags=["ai"])
+app.include_router(logs_router, prefix="/api", tags=["logs"])

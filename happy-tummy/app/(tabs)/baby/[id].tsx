@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -9,112 +10,92 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Colors, FontFamily, Radius, Shadow } from '@/constants/theme';
-import { ChildResponse, listChildren } from '@/lib/api';
+import {
+  ChildResponse,
+  ChildSummaryResponse,
+  MealRecommendationsResponse,
+  getChildSummary,
+  getMealRecommendations,
+  listChildren,
+} from '@/lib/api';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-type NutrientProgress = {
-  label: string;
-  value: number;
-};
-
-function ProgressBar({ label, value }: NutrientProgress) {
-  return (
-    <View style={styles.progressRow}>
-      <View style={styles.progressLabelRow}>
-        <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressValue}>{value}%</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, value))}%` }]} />
-      </View>
-    </View>
-  );
-}
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function BabyProfileDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams();
+  const childId = useMemo(() => {
+    const raw = Array.isArray(params.id) ? params.id[0] : params.id;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [params.id]);
+
   const [child, setChild] = useState<ChildResponse | null>(null);
+  const [childSummary, setChildSummary] = useState<ChildSummaryResponse | null>(null);
+  const [mealRecommendations, setMealRecommendations] = useState<MealRecommendationsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
+  const formatAgeLabel = (age: number | null) => {
+    if (age === null || age === undefined) return 'Age not set';
+    const ageNumber = Math.round(Number(age));
+    if (!Number.isFinite(ageNumber) || ageNumber < 0) return 'Age not set';
+    if (ageNumber < 12) return `${ageNumber} month${ageNumber === 1 ? '' : 's'}`;
+    const years = Math.floor(ageNumber / 12);
+    const months = ageNumber % 12;
+    if (months === 0) return `${years} year${years === 1 ? '' : 's'}`;
+    return `${years} year${years === 1 ? '' : 's'} ${months} month${months === 1 ? '' : 's'}`;
+  };
 
-    const loadChild = async () => {
-      try {
-        const children = await listChildren();
-        if (!mounted) return;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-        const selected = children.find((item) => String(item.user_key) === String(id));
-        setChild(selected ?? null);
-      } catch {
-        if (!mounted) return;
-        setChild(null);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
+      const loadChild = async () => {
+        setLoading(true);
+        try {
+          const children = await listChildren();
+          if (!active) return;
 
-    loadChild();
-    return () => {
-      mounted = false;
-    };
-  }, [id]);
+          const selected = childId
+            ? children.find((item) => Number(item.user_key) === childId)
+            : children[0];
 
-  const aiConditionSummary = useMemo(() => {
-    if (!child) return [] as string[];
+          if (!selected) {
+            setChild(null);
+            return;
+          }
 
-    const summary: string[] = [];
+          setChild(selected);
 
-    if (child.allergies === 1) {
-      summary.push('Potential food sensitivity. Introduce one new food at a time and monitor stool changes.');
-    } else {
-      summary.push('No allergy flag in profile. Continue balanced food exposure with normal observation.');
-    }
+          const [summary, recommendations] = await Promise.all([
+            getChildSummary(selected.user_key),
+            getMealRecommendations(selected.user_key),
+          ]);
 
-    if (child.early_born === 1) {
-      summary.push('Premature history noted. Prioritize hydration and fiber consistency before large meal changes.');
-    }
+          if (!active) return;
+          setChildSummary(summary);
+          setMealRecommendations(recommendations);
+        } catch (err) {
+          if (!active) return;
+          console.error('Failed to load child profile:', err);
+          setChild(null);
+        } finally {
+          if (active) setLoading(false);
+        }
+      };
 
-    if ((child.weight ?? 0) > 0) {
-      summary.push(`Current tracked weight: ${child.weight} lbs. Keep weekly trend checks for growth consistency.`);
-    }
+      loadChild();
 
-    if (summary.length === 0) {
-      summary.push('Profile has limited signals. Keep daily logs updated for stronger AI recommendations.');
-    }
-
-    return summary;
-  }, [child]);
-
-  const mealPlan = useMemo(() => {
-    if (!child) return [] as string[];
-
-    return [
-      'Breakfast: Oatmeal with mashed banana and warm water.',
-      'Lunch: Soft rice porridge with pumpkin and shredded chicken.',
-      'Snack: Pear puree or steamed apple slices (age-appropriate texture).',
-      'Dinner: Sweet potato mash with spinach and lean protein.',
-      child.allergies === 1
-        ? 'Note: Avoid known trigger foods and reintroduce new foods one at a time.'
-        : 'Note: Rotate fruits and vegetables daily for fiber variety.',
-    ];
-  }, [child]);
-
-  const nutrientProgress = useMemo(() => {
-    const hasAllergies = child?.allergies === 1;
-    return [
-      { label: 'Hydration', value: hasAllergies ? 72 : 80 },
-      { label: 'Fiber', value: hasAllergies ? 68 : 77 },
-      { label: 'Protein', value: 74 },
-      { label: 'Healthy Fats', value: 70 },
-      { label: 'Micronutrients', value: hasAllergies ? 66 : 75 },
-    ];
-  }, [child]);
+      return () => {
+        active = false;
+      };
+    }, [childId])
+  );
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.centerWrap}>
+          <ActivityIndicator size="large" color={Colors.red} />
           <Text style={styles.loadingText}>Loading baby profile...</Text>
         </View>
       </SafeAreaView>
@@ -151,37 +132,73 @@ export default function BabyProfileDetailScreen() {
           </View>
           <View style={styles.infoTextWrap}>
             <Text style={styles.infoName}>{child.name ?? 'Baby'}</Text>
-            <Text style={styles.infoSub}>Age: {child.age ?? 0} months</Text>
+            <Text style={styles.infoSub}>Age: {formatAgeLabel(child.age)}</Text>
             <Text style={styles.infoSub}>Gender: {child.gender ?? 'Not set'}</Text>
             <Text style={styles.infoSub}>Weight: {child.weight ? `${child.weight} lbs` : 'Not set'}</Text>
           </View>
         </View>
 
+        <TouchableOpacity
+          style={styles.logBtn}
+          activeOpacity={0.85}
+          onPress={() =>
+            router.push({
+              pathname: '/(tabs)/logs',
+              params: { childId: String(child.user_key) },
+            })
+          }
+        >
+          <Ionicons name="clipboard-outline" size={18} color={Colors.white} />
+          <Text style={styles.logBtnText}>Daily Log for {child.name ?? 'this child'}</Text>
+        </TouchableOpacity>
+
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>AI Condition Analysis</Text>
-          {aiConditionSummary.map((item, index) => (
-            <View key={index} style={styles.bulletRow}>
-              <Ionicons name="sparkles" size={14} color={Colors.red} />
-              <Text style={styles.sectionText}>{item}</Text>
+          <Text style={styles.sectionTitle}>AI Summary</Text>
+          <Text style={styles.sectionText}>{childSummary?.summary ?? 'No logs yet.'}</Text>
+          <View style={styles.nutritionRow}>
+            <View style={styles.nutritionStat}>
+              <Text style={styles.nutritionValue}>{Math.round(childSummary?.nutritionTotals.calories ?? 0)}</Text>
+              <Text style={styles.nutritionLabel}>Calories</Text>
             </View>
-          ))}
+            <View style={styles.nutritionStat}>
+              <Text style={styles.nutritionValue}>{(childSummary?.nutritionTotals.protein ?? 0).toFixed(1)}</Text>
+              <Text style={styles.nutritionLabel}>Protein (g)</Text>
+            </View>
+            <View style={styles.nutritionStat}>
+              <Text style={styles.nutritionValue}>{(childSummary?.nutritionTotals.fiber ?? 0).toFixed(1)}</Text>
+              <Text style={styles.nutritionLabel}>Fiber (g)</Text>
+            </View>
+            <View style={styles.nutritionStat}>
+              <Text style={styles.nutritionValue}>{(childSummary?.nutritionTotals.sugar ?? 0).toFixed(1)}</Text>
+              <Text style={styles.nutritionLabel}>Sugar (g)</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Recommended Meal Plan</Text>
-          {mealPlan.map((item, index) => (
-            <View key={index} style={styles.bulletRow}>
-              <Ionicons name="restaurant" size={14} color={Colors.gray700} />
-              <Text style={styles.sectionText}>{item}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Nutrient Intake Progress</Text>
-          {nutrientProgress.map((item) => (
-            <ProgressBar key={item.label} label={item.label} value={item.value} />
-          ))}
+          <Text style={styles.sectionTitle}>Meal Recommendations</Text>
+          <Text style={styles.sectionSubtitle}>
+            {mealRecommendations?.feedingGuidance?.message ?? 'Recommendations are based on current logs and age.'}
+          </Text>
+          <View style={styles.recommendationsList}>
+            {(mealRecommendations?.mealRecommendations ?? []).map((meal, index) => (
+              <View key={`${meal.name ?? 'meal'}-${index}`} style={styles.recommendationGroup}>
+                <View style={styles.recommendationHeader}>
+                  <Text style={styles.recommendationTitle}>{meal.name ?? 'Meal option'}</Text>
+                  <Text style={styles.recommendationReason}>
+                    {meal.mealType ?? 'meal'} · {meal.texture ?? 'texture'}
+                  </Text>
+                  <Text style={styles.recommendationReason}>{meal.description ?? ''}</Text>
+                  <Text style={styles.recommendationReason}>
+                    Calories {meal.nutrients.calories ?? 0} · Protein {meal.nutrients.protein ?? 0}g · Fiber {meal.nutrients.fiber ?? 0}g · Sugar {meal.nutrients.sugar ?? 0}g
+                  </Text>
+                </View>
+              </View>
+            ))}
+            {(mealRecommendations?.mealRecommendations ?? []).length === 0 && (
+              <Text style={styles.recommendationReason}>No meal recommendations available yet.</Text>
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -290,6 +307,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.gray700,
   },
+  logBtn: {
+    backgroundColor: Colors.red,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.xl,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    ...Shadow.md,
+  },
+  logBtnText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 14,
+    color: Colors.white,
+  },
   sectionCard: {
     backgroundColor: Colors.white,
     borderWidth: 3,
@@ -304,46 +339,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.gray900,
   },
-  bulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
+  sectionSubtitle: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray500,
   },
   sectionText: {
-    flex: 1,
     fontFamily: FontFamily.body,
     fontSize: 13,
     color: Colors.gray700,
     lineHeight: 19,
   },
-  progressRow: {
-    gap: 4,
-  },
-  progressLabelRow: {
+  nutritionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  nutritionStat: {
     alignItems: 'center',
+    flex: 1,
   },
-  progressLabel: {
-    fontFamily: FontFamily.bodyBold,
-    fontSize: 13,
-    color: Colors.gray700,
+  nutritionValue: {
+    fontFamily: FontFamily.display,
+    fontSize: 16,
+    color: Colors.gray900,
   },
-  progressValue: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 11,
+  nutritionLabel: {
+    fontFamily: FontFamily.body,
+    fontSize: 10,
     color: Colors.gray500,
+    marginTop: 2,
   },
-  progressTrack: {
-    height: 10,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: Colors.outline,
-    backgroundColor: Colors.gray200,
-    overflow: 'hidden',
+  recommendationsList: {
+    gap: 12,
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Colors.green,
+  recommendationGroup: {
+    gap: 8,
+  },
+  recommendationHeader: {
+    gap: 4,
+  },
+  recommendationTitle: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 14,
+    color: Colors.red,
+  },
+  recommendationReason: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
   },
 });

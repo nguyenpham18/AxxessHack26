@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 
 import { getChatReply } from "../../lib/featherless";
+import { getMe, listChildren, ChildResponse } from "../../lib/api";
 
 type MsgRole = 'ai' | 'user';
 
@@ -20,22 +22,113 @@ interface Message {
   id: string;
   role: MsgRole;
   text: string;
+  isLoading?: boolean;
 }
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: '1',
-    role: 'ai',
-    text: "Hi Sarah! I know Maya well — ask me anything about her digestion and I'll answer based on her logs.",
+// Loading indicator with animated dots
+function LoadingIndicator() {
+  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+
+  useEffect(() => {
+    const animateDot = (dotAnim: Animated.Value, delay: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dotAnim, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dotAnim, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    dots.forEach((dot, i) => animateDot(dot, i * 150));
+  }, [dots]);
+
+  return (
+    <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+      {dots.map((animValue, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            loadingStyles.dot,
+            {
+              opacity: animValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.4, 1],
+              }),
+              transform: [
+                {
+                  scale: animValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 1.3],
+                  }),
+                },
+              ],
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const loadingStyles = StyleSheet.create({
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.gray700,
   },
-];
-
-
+});
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [parentName, setParentName] = useState('there');
+  const [childName, setChildName] = useState('your little one');
+  const [babyData, setBabyData] = useState<ChildResponse | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Fetch user and child data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const user = await getMe();
+        setParentName(user.first_name || 'there');
+
+        const children = await listChildren();
+        if (children.length > 0) {
+          const child = children[0]; // Use first child
+          setChildName(child.name || 'your little one');
+          setBabyData(child);
+        }
+      } catch (err) {
+        console.error('Failed to load user/child data:', err);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Initialize messages once we have names
+  useEffect(() => {
+    if (messages.length === 0 && (parentName !== 'there' || childName !== 'your little one')) {
+      setMessages([
+        {
+          id: '1',
+          role: 'ai',
+          text: `Hi ${parentName}! I know ${childName} well — ask me anything about their digestion and I'll answer based on their logs.`,
+        },
+      ]);
+    }
+  }, [parentName, childName]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -52,10 +145,11 @@ export default function ChatScreen() {
     const loadingMsg: Message = {
       id: loadingId,
       role: 'ai',
-      text: "Thinking...",
+      text: '',
+      isLoading: true,
     };
 
-    // Update UI immediately (user msg + thinking msg)
+    // Update UI immediately (user msg + loading msg)
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
     setInput('');
 
@@ -68,8 +162,12 @@ export default function ChatScreen() {
           content: m.text,
         }));
 
-      // TODO: Replace with real baby + logs from DB
-      const baby = { name: "Maya", ageMonths: 10, allergies: [] };
+      // Use real baby data from DB, fallback to defaults
+      const baby = babyData ? {
+        name: babyData.name || 'baby',
+        ageMonths: babyData.age || 0,
+        allergies: [],
+      } : { name: 'baby', ageMonths: 0, allergies: [] };
       const recentLogs = [
         { day: "today", stool: "none", hydration: "low", gas: "yes" },
       ];
@@ -82,13 +180,13 @@ export default function ChatScreen() {
       });
 
       setMessages((prev) =>
-        prev.map((m) => (m.id === loadingId ? { ...m, text: data.reply } : m))
+        prev.map((m) => (m.id === loadingId ? { ...m, text: data.reply, isLoading: false } : m))
       );
     } catch (e: any) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === loadingId
-            ? { ...m, text: e?.message ?? "Load failed" }
+            ? { ...m, text: e?.message ?? "Load failed", isLoading: false }
             : m
         )
       );
@@ -125,14 +223,17 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
-          {messages.map((msg) => (
-            <View
-              key={msg.id}
-              style={[
-                styles.bubble,
-                msg.role === 'ai' ? styles.bubbleAi : styles.bubbleUser,
-              ]}
-            >
+        {messages.map((msg) => (
+          <View
+            key={msg.id}
+            style={[
+              styles.bubble,
+              msg.role === 'ai' ? styles.bubbleAi : styles.bubbleUser,
+            ]}
+          >
+            {msg.isLoading ? (
+              <LoadingIndicator />
+            ) : (
               <Text
                 style={[
                   styles.bubbleText,
@@ -141,8 +242,9 @@ export default function ChatScreen() {
               >
                 {msg.text}
               </Text>
-            </View>
-          ))}
+            )}
+          </View>
+        ))}
         </ScrollView>
         {/* Input bar */}
         <View style={styles.inputBar}>
@@ -150,7 +252,7 @@ export default function ChatScreen() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask me anything about Maya..."
+            placeholder={`Ask me anything about ${childName}...`}
             placeholderTextColor={Colors.gray500}
             returnKeyType="send"
             onSubmitEditing={() => sendMessage(input)}

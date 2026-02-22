@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
+import { useLocalSearchParams } from 'expo-router';
 
 // ─── Constants ─────────────────────────────────────────────
-import { getCoachMessage, getChatReply, searchNutrition } from '@/lib/featherless';
+import { searchNutrition } from '@/lib/featherless';
+import { listChildren, createDailyLog, ChildResponse } from '@/lib/api';
 
 const STOOL_TYPES = [
   { type: 1, label: 'Type 1', desc: 'Hard lumps'   },
@@ -42,7 +44,6 @@ const HYDRATION_OPTIONS = [
 const UNIT_TO_GRAMS: Record<string, number> = {
   tsp:    4,
   tbsp:   12,
-  oz:     28,
   cup:    120,
   pieces: 30,
   strips: 20,
@@ -179,11 +180,12 @@ function MiniLabel({ text }: { text: string }) {
 
 // ─── Quantity Prompt Modal ─────────────────────────────────
 function QuantityPrompt({
-  food, onConfirm, onCancel,
+  food, onConfirm, onCancel, childName,
 }: {
   food: { name: string; nutrition: NutritionInfo | null };
   onConfirm: (quantity: number, unit: string) => void;
   onCancel: () => void;
+  childName: string;
 }) {
   // Get smart defaults
   const defaults = getSmartDefaults(food.name);
@@ -203,7 +205,7 @@ function QuantityPrompt({
       <View style={promptStyles.overlay}>
         <View style={promptStyles.sheet}>
           <View style={promptStyles.handle} />
-          <Text style={promptStyles.title}>How much did Maya have?</Text>
+          <Text style={promptStyles.title}>How much did {childName} have?</Text>
           <Text style={promptStyles.foodName}>{food.name}</Text>
 
           {/* Quick add suggestion */}
@@ -631,11 +633,12 @@ const tagStyles = StyleSheet.create({
 
 // ─── Food Search Section ────────────────────────────────────
 function FoodSearchSection({
-  foodTags, onAdd, onRemove,
+  foodTags, onAdd, onRemove, childName,
 }: {
   foodTags: FoodTag[];
   onAdd: (tag: FoodTag) => void;
   onRemove: (id: string) => void;
+  childName: string;
 }) {
   const [query,       setQuery]       = useState('');
   const [results,     setResults]     = useState<any[]>([]);
@@ -707,7 +710,7 @@ function FoodSearchSection({
           style={searchStyles.input}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search food (e.g. oatmeal, banana...)"
+          placeholder={`Search food for ${childName} (e.g. oatmeal, banana...)`}
           placeholderTextColor={Colors.gray500}
           returnKeyType="search"
           onSubmitEditing={handleSearch}
@@ -797,6 +800,7 @@ function FoodSearchSection({
           food={pending}
           onConfirm={handleConfirm}
           onCancel={() => setPending(null)}
+          childName={childName}
         />
       )}
     </View>
@@ -888,12 +892,65 @@ const searchStyles = StyleSheet.create({
 
 // ─── Main Screen ───────────────────────────────────────────
 export default function DailyLogScreen() {
+  const params = useLocalSearchParams<{ childId?: string | string[] }>();
   const [stoolType, setStoolType] = useState<number | null>(null);
   const [frequency, setFrequency] = useState(0);
   const [hydration, setHydration] = useState<number | null>(null);
   const [foodTags,  setFoodTags]  = useState<FoodTag[]>([]);
   const [saved,     setSaved]     = useState(false);
   const [saving,    setSaving]    = useState(false);
+  const [childName, setChildName] = useState('your child');
+  const [babyData,  setBabyData]  = useState<ChildResponse | null>(null);
+  const [children, setChildren] = useState<ChildResponse[]>([]);
+  const [selectedChildUserKey, setSelectedChildUserKey] = useState<number | null>(null);
+
+  const formatAgeLabel = (age: number | null) => {
+    if (age === null || age === undefined) return 'Age not set';
+
+    const roundedAge = Math.round(Number(age));
+    if (!Number.isFinite(roundedAge) || roundedAge < 0) return 'Age not set';
+    if (roundedAge < 12) return `${roundedAge} month${roundedAge === 1 ? '' : 's'}`;
+
+    const years = Math.floor(roundedAge / 12);
+    const months = roundedAge % 12;
+    if (months === 0) return `${years} year${years === 1 ? '' : 's'}`;
+    return `${years} year${years === 1 ? '' : 's'} ${months} month${months === 1 ? '' : 's'}`;
+  };
+
+  // Fetch child data on mount
+  React.useEffect(() => {
+    const loadChildData = async () => {
+      try {
+        const children = await listChildren();
+        setChildren(children);
+
+        const rawChildId = Array.isArray(params.childId) ? params.childId[0] : params.childId;
+        const requestedChildId = Number(rawChildId);
+
+        if (children.length > 0) {
+          const child = Number.isFinite(requestedChildId)
+            ? (children.find((item) => Number(item.user_key) === requestedChildId) ?? children[0])
+            : children[0];
+
+          setSelectedChildUserKey(child.user_key);
+          setChildName(child.name || 'your child');
+          setBabyData(child);
+        }
+      } catch (err) {
+        console.error('Failed to load child data:', err);
+      }
+    };
+    loadChildData();
+  }, [params.childId]);
+
+  React.useEffect(() => {
+    if (selectedChildUserKey === null) return;
+    const selected = children.find((item) => Number(item.user_key) === selectedChildUserKey);
+    if (!selected) return;
+
+    setBabyData(selected);
+    setChildName(selected.name || 'your child');
+  }, [selectedChildUserKey, children]);
 
   const addFoodTag    = (tag: FoodTag) => setFoodTags((prev) => [...prev, tag]);
   const removeFoodTag = (id: string)   => setFoodTags((prev) => prev.filter((t) => t.id !== id));
@@ -903,10 +960,15 @@ export default function DailyLogScreen() {
       Alert.alert('Missing info', 'Please select a stool type and hydration level.', [{ text: 'OK' }]);
       return;
     }
+    if (!babyData) {
+      Alert.alert('Missing child', 'Please create a child profile before saving logs.', [{ text: 'OK' }]);
+      return;
+    }
     setSaving(true);
 
     const logEntry = {
-      date:           new Date().toISOString(),
+      childUserKey:   babyData.user_key,
+      logDate:        new Date().toISOString(),
       stoolType,
       stoolFrequency: frequency,
       hydration:      HYDRATION_OPTIONS[hydration].label,
@@ -919,12 +981,14 @@ export default function DailyLogScreen() {
       })),
     };
 
-    // TODO: POST logEntry to database
-    console.log('Saving log entry:', JSON.stringify(logEntry, null, 2));
-
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setSaving(false);
-    setSaved(true);
+    try {
+      await createDailyLog(logEntry);
+      setSaved(true);
+    } catch (error: any) {
+      Alert.alert('Save failed', error?.message ?? 'Unable to save log. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -943,7 +1007,7 @@ export default function DailyLogScreen() {
           <View>
             <Text style={styles.headerTitle}>Daily Log</Text>
             <Text style={styles.headerSub}>
-              Maya · {new Date().toLocaleDateString('en-US', {
+              {childName} ({formatAgeLabel(babyData?.age ?? null)}) · {new Date().toLocaleDateString('en-US', {
                 weekday: 'long', month: 'short', day: 'numeric',
               })}
             </Text>
@@ -956,6 +1020,29 @@ export default function DailyLogScreen() {
       <View style={styles.wave} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {children.length > 0 && (
+          <SectionCard iconName="people-outline" title="Choose Child">
+            <MiniLabel text="Select who this daily log is for" />
+            <View style={styles.childRow}>
+              {children.map((child) => {
+                const active = selectedChildUserKey === child.user_key;
+                return (
+                  <TouchableOpacity
+                    key={child.user_key}
+                    onPress={() => setSelectedChildUserKey(child.user_key)}
+                    style={[styles.childChip, active && styles.childChipActive]}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.childChipText, active && styles.childChipTextActive]}>
+                      {child.name ?? `Child ${child.user_key}`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </SectionCard>
+        )}
 
         {/* ── 1. Stool Type ── */}
         <SectionCard iconName="medical-outline" title="Stool Type">
@@ -1032,7 +1119,7 @@ export default function DailyLogScreen() {
 
         {/* ── 3. Hydration ── */}
         <SectionCard iconName="water-outline" title="Hydration">
-          <MiniLabel text="How much did Maya drink today?" />
+          <MiniLabel text={`How much did ${childName} drink today?`} />
           <View style={styles.hydrationRow}>
             {HYDRATION_OPTIONS.map((opt, i) => (
               <TouchableOpacity
@@ -1053,11 +1140,12 @@ export default function DailyLogScreen() {
 
         {/* ── 4. Food Intake ── */}
         <SectionCard iconName="restaurant-outline" title="Food Intake">
-          <MiniLabel text="What did Maya eat today?" />
+          <MiniLabel text={`What did ${childName} eat today?`} />
           <FoodSearchSection
             foodTags={foodTags}
             onAdd={addFoodTag}
             onRemove={removeFoodTag}
+            childName={childName}
           />
           <View style={styles.hintBox}>
             <Ionicons name="bulb-outline" size={14} color={Colors.gray500} />
@@ -1083,7 +1171,7 @@ export default function DailyLogScreen() {
             <Ionicons name="checkmark-circle" size={48} color={Colors.green} />
             <Text style={styles.savedTitle}>Log saved!</Text>
             <Text style={styles.savedDesc}>
-              Great job tracking today. Check the dashboard for AI insights based on Maya's patterns.
+              Great job tracking today. Check the dashboard for AI insights based on {childName}'s patterns.
             </Text>
             <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
               <Ionicons name="add-circle-outline" size={16} color={Colors.gray900} />
@@ -1133,6 +1221,31 @@ const styles = StyleSheet.create({
     marginTop: -24,
   },
   scroll: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32, gap: 14 },
+  childRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  childChip: {
+    borderWidth: 2.5,
+    borderColor: Colors.gray300,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.white,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  childChipActive: {
+    borderColor: Colors.outline,
+    backgroundColor: Colors.redPale,
+  },
+  childChipText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 12,
+    color: Colors.gray700,
+  },
+  childChipTextActive: {
+    color: Colors.red,
+  },
   miniLabel: {
     fontFamily: FontFamily.bodyBlack,
     fontSize: 10,

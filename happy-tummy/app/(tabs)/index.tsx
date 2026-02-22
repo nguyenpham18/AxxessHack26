@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -8,14 +9,17 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { getMe, listChildren, type ChildResponse } from '@/lib/api';
+import { getDailyInsight, getMe, listChildren, type ChildResponse, type DailyInsightResponse } from '@/lib/api';
 
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
   const [children, setChildren] = useState<ChildResponse[]>([]);
   const [parentName, setParentName] = useState('');
+  const [insightsByChild, setInsightsByChild] = useState<Record<number, DailyInsightResponse>>({});
+  const [insightLoading, setInsightLoading] = useState(false);
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -23,47 +27,116 @@ export default function DashboardScreen() {
     day: 'numeric',
   });
 
-  const getTodayInsight = (child: ChildResponse) => {
-    const hasAllergyFlag = child.allergies === 1;
-    const isEarlyBorn = child.early_born === 1;
-
-    if (hasAllergyFlag) {
-      return {
-        borderColor: Colors.yellow,
-        iconName: 'warning',
-        iconColor: Colors.yellow,
-        title: `${child.name ?? 'Baby'} may need allergy-safe meals today`,
-        desc: 'Use familiar foods first and introduce only one new food at a time. Track stool and comfort after meals.',
-      };
+  const formatAgeLabel = (age: ChildResponse['age']) => {
+    if (age === null || age === undefined) {
+      return 'Age not set';
     }
 
-    if (isEarlyBorn) {
+    const ageNumber = Number(age);
+    if (!Number.isFinite(ageNumber) || ageNumber < 0) {
+      return 'Age not set';
+    }
+
+    const roundedAge = Math.round(ageNumber);
+    if (roundedAge < 12) {
+      return `${roundedAge} month${roundedAge === 1 ? '' : 's'}`;
+    }
+
+    const years = Math.floor(roundedAge / 12);
+    const months = roundedAge % 12;
+    if (months === 0) {
+      return `${years} year${years === 1 ? '' : 's'}`;
+    }
+
+    return `${years} year${years === 1 ? '' : 's'} ${months} month${months === 1 ? '' : 's'}`;
+  };
+
+  const getInsightVisual = (status?: DailyInsightResponse['status']) => {
+    if (status === 'caution') {
       return {
         borderColor: Colors.red,
-        iconName: 'heart',
+        iconName: 'warning' as const,
         iconColor: Colors.red,
-        title: `${child.name ?? 'Baby'} needs gentle feeding pacing today`,
-        desc: 'Keep portions small and frequent with hydration breaks to support digestion and comfort throughout the day.',
       };
     }
-
+    if (status === 'good') {
+      return {
+        borderColor: Colors.green,
+        iconName: 'checkmark-circle' as const,
+        iconColor: Colors.green,
+      };
+    }
     return {
-      borderColor: Colors.green,
-      iconName: 'checkmark-circle',
-      iconColor: Colors.green,
-      title: `${child.name ?? 'Baby'} is on track today`,
-      desc: 'Maintain balanced meals with fruits, vegetables, and water to keep bowel movement and tummy comfort stable.',
+      borderColor: Colors.yellow,
+      iconName: 'alert-circle' as const,
+      iconColor: Colors.yellow,
     };
   };
 
-  useEffect(() => {
-    getMe()
-      .then((user) => setParentName(user.first_name))
-      .catch(() => {});
-    listChildren()
-      .then(setChildren)
-      .catch(() => {});
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const loadDashboard = async () => {
+        const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T | null> => {
+          return await Promise.race([
+            promise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+          ]);
+        };
+
+        try {
+          const [user, fetchedChildren] = await Promise.all([
+            getMe().catch(() => null),
+            listChildren().catch(() => [] as ChildResponse[]),
+          ]);
+
+          if (!active) return;
+
+          if (user?.first_name) {
+            setParentName(user.first_name);
+          }
+
+          setChildren(fetchedChildren);
+
+          if (fetchedChildren.length === 0) {
+            setInsightsByChild({});
+            return;
+          }
+
+          setInsightLoading(true);
+          const insightPairs = await Promise.all(
+            fetchedChildren.map(async (child) => {
+              try {
+                const insight = await withTimeout(getDailyInsight(child.user_key), 9000);
+                return [child.user_key, insight] as const;
+              } catch {
+                return [child.user_key, null] as const;
+              }
+            })
+          );
+
+          if (!active) return;
+
+          const nextInsights: Record<number, DailyInsightResponse> = {};
+          insightPairs.forEach(([childKey, insight]) => {
+            if (insight) {
+              nextInsights[childKey] = insight;
+            }
+          });
+          setInsightsByChild(nextInsights);
+        } finally {
+          if (active) setInsightLoading(false);
+        }
+      };
+
+      loadDashboard();
+
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const handleAddBaby = () => {
     router.push('/(onboarding)/baby-profile');
@@ -117,7 +190,7 @@ export default function DashboardScreen() {
             <View style={styles.babyInfo}>
               <Text style={styles.babyName}>{child.name ?? 'Baby'}</Text>
               <Text style={styles.babyAge}>
-                {child.age ? `${child.age} months` : 'Age not set'}
+                {formatAgeLabel(child.age)}
               </Text>
             </View>
             <View style={[styles.badge, { backgroundColor: Colors.greenPale }]}>
@@ -147,16 +220,30 @@ export default function DashboardScreen() {
         )}
 
         {children.map((child) => {
-          const insight = getTodayInsight(child);
+          const insight = insightsByChild[child.user_key];
+          const visual = getInsightVisual(insight?.status);
           return (
-            <View key={`insight-${child.user_key}`} style={[styles.insightCard, { borderLeftColor: insight.borderColor }]}
+            <View key={`insight-${child.user_key}`} style={[styles.insightCard, { borderLeftColor: visual.borderColor }]}
             >
+              <Text style={styles.insightChildName}>Child: {child.name ?? 'Baby'}</Text>
               <View style={styles.insightTop}>
-                <Ionicons name={insight.iconName as any} size={18} color={insight.iconColor} />
-                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Ionicons name={visual.iconName} size={18} color={visual.iconColor} />
+                <Text style={styles.insightTitle}>{insight?.title ?? `${child.name ?? 'Baby'} insight is loading`}</Text>
                 <Text style={styles.insightTime}>Today</Text>
               </View>
-              <Text style={styles.insightDesc}>{insight.desc}</Text>
+              {insightLoading && !insight ? (
+                <View style={styles.insightLoadingRow}>
+                  <ActivityIndicator size="small" color={Colors.red} />
+                  <Text style={styles.insightLoadingText}>Comparing current log with previous logs...</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.insightDesc}>{insight?.description ?? 'No insight yet. Add another daily log to compare trends.'}</Text>
+                  {!!insight?.suggestions?.length && (
+                    <Text style={styles.insightSuggestion}>Suggestion: {insight.suggestions[0]}</Text>
+                  )}
+                </>
+              )}
             </View>
           );
         })}
@@ -351,6 +438,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   insightIcon: { fontSize: 17 },
+  insightChildName: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 12,
+    color: Colors.gray500,
+    marginBottom: 6,
+  },
   insightTitle: {
     fontFamily: FontFamily.displayBold,
     fontSize: 16,
@@ -369,6 +462,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.gray700,
     lineHeight: 19,
+  },
+  insightSuggestion: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 13,
+    color: Colors.red,
+    marginTop: 8,
+  },
+  insightLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  insightLoadingText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.gray500,
   },
   insightCta: {
     fontFamily: FontFamily.bodyBold,

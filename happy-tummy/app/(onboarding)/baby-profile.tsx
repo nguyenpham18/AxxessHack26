@@ -37,6 +37,35 @@ export default function BabyProfileScreen() {
   const [gender, setGender] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
 
+  const calculateAgeInMonthsFromDate = (date: Date | null): number | null => {
+    if (!date) return null;
+
+    const today = new Date();
+    let months = (today.getFullYear() - date.getFullYear()) * 12;
+    months += today.getMonth() - date.getMonth();
+
+    if (today.getDate() < date.getDate()) {
+      months--;
+    }
+
+    return Math.max(0, months);
+  };
+
+  const formatAgeDisplay = (months: number | null) => {
+    if (months === null || !Number.isFinite(months)) return '';
+    if (months < 12) return `${months} month${months === 1 ? '' : 's'}`;
+
+    const years = Math.floor(months / 12);
+    const remMonths = months % 12;
+    if (remMonths === 0) {
+      return `${years} year${years === 1 ? '' : 's'}`;
+    }
+    return `${years} year${years === 1 ? '' : 's'} ${remMonths} month${remMonths === 1 ? '' : 's'}`;
+  };
+
+  const ageMonths = calculateAgeInMonthsFromDate(dob);
+  const canContinue = babyName.trim().length > 0 && ageMonths !== null;
+
   const formatDob = (date: Date | null) => {
     if (!date) return '';
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -58,9 +87,12 @@ export default function BabyProfileScreen() {
   };
 
   const handleContinue = () => {
+    if (!canContinue) return;
+
     setChildDraft({
-      name: babyName,
+      name: babyName.trim(),
       dob: formatDob(dob),
+      ageMonths,
       gender: GENDERS[gender],
     });
     router.push('/(onboarding)/baby-details');
@@ -195,6 +227,9 @@ export default function BabyProfileScreen() {
                 )}
               </>
             )}
+            {!!formatAgeDisplay(ageMonths) && (
+              <Text style={styles.ageHint}>Age detected: {formatAgeDisplay(ageMonths)}</Text>
+            )}
           </View>
 
           {/* Gender */}
@@ -220,7 +255,7 @@ export default function BabyProfileScreen() {
             label="Continue →"
             variant="red"
             onPress={handleContinue}
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 8, opacity: canContinue ? 1 : 0.55 }}
           />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -362,6 +397,12 @@ const styles = StyleSheet.create({
   },
   inputPlaceholder: {
     color: Colors.gray500,
+  },
+  ageHint: {
+    marginTop: 8,
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
   },
 
   // Gender selector
