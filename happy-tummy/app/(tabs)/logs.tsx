@@ -30,20 +30,29 @@ function IconScale({
           <TouchableOpacity
             key={i}
             onPress={() => onSelect(i)}
-            style={[scaleStyles.opt, selected === i && scaleStyles.optSel]}
+            style={[
+              scaleStyles.opt,
+              selected === i && scaleStyles.optSel,
+              selected === i && scaleStyles.optSelRaised,
+            ]}
             activeOpacity={0.8}
           >
             <opt.IconComponent 
               name={opt.iconName} 
               size={22} 
-              color={opt.color || Colors.gray500} 
+              color={selected === i ? (opt.color || Colors.gray900) : Colors.gray500}
             />
           </TouchableOpacity>
         ))}
       </View>
       <View style={scaleStyles.labelRow}>
         {options.map((opt, i) => (
-          <Text key={i} style={scaleStyles.label}>{opt.label}</Text>
+          <Text
+            key={i}
+            style={[scaleStyles.label, selected === i && scaleStyles.labelSel]}
+          >
+            {opt.label}
+          </Text>
         ))}
       </View>
     </View>
@@ -67,6 +76,10 @@ const scaleStyles = StyleSheet.create({
     borderRadius: 20,
   },
   optSel: { backgroundColor: Colors.redPale },
+  optSelRaised: {
+    borderWidth: 2,
+    borderColor: Colors.outline,
+  },
   labelRow: {
     flexDirection: 'row',
     marginTop: 4,
@@ -80,6 +93,9 @@ const scaleStyles = StyleSheet.create({
     letterSpacing: 0.3,
     flex: 1,
     textAlign: 'center',
+  },
+  labelSel: {
+    color: Colors.redDark,
   },
 });
 
@@ -774,12 +790,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontFamily: FontFamily.display,
-    fontSize: 24,
+    fontSize: 26,
     color: Colors.gray900,
   },
   emptySubtitle: {
     fontFamily: FontFamily.body,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.gray500,
     textAlign: 'center',
     lineHeight: 20,
@@ -799,7 +815,7 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 16,
+    fontSize: 18,
     color: Colors.white,
   },
 
@@ -830,12 +846,12 @@ const styles = StyleSheet.create({
   },
   logItemDateText: {
     fontFamily: FontFamily.bodyBold,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.gray900,
   },
   logItemSummary: {
     fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.gray500,
     marginTop: 3,
   },
@@ -851,12 +867,12 @@ const styles = StyleSheet.create({
   },
   logDetailLabel: {
     fontFamily: FontFamily.bodyBold,
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.gray900,
   },
   logDetailValue: {
     fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.gray700,
     lineHeight: 18,
   },
@@ -878,7 +894,7 @@ const styles = StyleSheet.create({
   },
   addNewButtonText: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 16,
+    fontSize: 18,
     color: Colors.white,
   },
 
@@ -896,7 +912,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: FontFamily.display,
-    fontSize: 26,
+    fontSize: 28,
     color: Colors.white,
     textShadowColor: 'rgba(0,0,0,0.15)',
     textShadowOffset: { width: 2, height: 2 },
@@ -904,7 +920,7 @@ const styles = StyleSheet.create({
   },
   headerSub: {
     fontFamily: FontFamily.body,
-    fontSize: 13,
+    fontSize: 15,
     color: 'rgba(255,255,255,0.8)',
     marginTop: 4,
   },
@@ -927,7 +943,7 @@ const styles = StyleSheet.create({
   // Mini label
   miniLabel: {
     fontFamily: FontFamily.bodyBlack,
-    fontSize: 10,
+    fontSize: 12,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     color: Colors.gray500,
@@ -961,7 +977,7 @@ const styles = StyleSheet.create({
   },
   consistLabel: {
     fontFamily: FontFamily.bodyBlack,
-    fontSize: 9,
+    fontSize: 11,
     color: Colors.gray500,
   },
 
@@ -983,7 +999,7 @@ const styles = StyleSheet.create({
   colorChipSel: { borderColor: Colors.outline },
   colorLabel: {
     fontFamily: FontFamily.bodyBlack,
-    fontSize: 8,
+    fontSize: 10,
     color: Colors.gray500,
     textTransform: 'uppercase',
   },
@@ -1025,7 +1041,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 18,
+    fontSize: 20,
     color: Colors.white,
     textShadowColor: 'rgba(0,0,0,0.2)',
     textShadowOffset: { width: 1, height: 1 },
@@ -1045,7 +1061,7 @@ const styles = StyleSheet.create({
   },
   resetButtonText: {
     fontFamily: FontFamily.bodyBold,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.gray500,
   },
 });

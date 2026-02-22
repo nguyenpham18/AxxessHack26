@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
-import { Text, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Colors, FontFamily } from '@/constants/theme';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 function TabIcon({ IconComponent, iconName, label, focused }: { 
   IconComponent: any; 
@@ -13,10 +13,9 @@ function TabIcon({ IconComponent, iconName, label, focused }: {
     <View style={[styles.tabItem, focused && styles.tabItemActive]}>
       <IconComponent 
         name={iconName} 
-        size={24} 
+        size={26} 
         color={focused ? Colors.red : Colors.gray500} 
       />
-      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
     </View>
   );
 }
@@ -28,6 +27,8 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
+        tabBarItemStyle: styles.tabBarItem,
+        tabBarIconStyle: styles.tabBarIcon,
       }}
     >
       <Tabs.Screen
@@ -63,7 +64,7 @@ export default function TabsLayout() {
             <TabIcon 
               IconComponent={Ionicons}
               iconName="chatbubble-ellipses" 
-              label="Ask AI" 
+              label="AI Chat" 
               focused={focused} 
             />
           ),
@@ -82,39 +83,45 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="baby/[id]"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 72,
+    height: 76,
     backgroundColor: Colors.white,
     borderTopWidth: 3,
     borderTopColor: Colors.outline,
-    paddingTop: 4,
+    paddingTop: 8,
     paddingBottom: 8,
+    overflow: 'visible',
+  },
+  tabBarItem: {
+    flex: 1,
+    marginHorizontal: 0,
+    borderRadius: 14,
+    paddingHorizontal: 0,
+  },
+  tabBarIcon: {
+    marginTop: 0,
   },
   tabItem: {
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    paddingVertical: 8,
     borderRadius: 14,
-    minWidth: 60,
+    minWidth: 0,
+    width: '100%',
   },
   tabItemActive: {
     backgroundColor: Colors.redPale,
-  },
-  tabLabel: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 9,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  tabLabelActive: { 
-    color: Colors.red 
   },
 });
