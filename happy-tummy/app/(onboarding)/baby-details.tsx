@@ -120,7 +120,7 @@ export default function BabyDetailsScreen() {
 
         {/* Q3 — Premature */}
         <View>
-          <Text style={styles.label}>WAS YOUR BABY BORN BEFORE 37 WEEKS?</Text>
+          <Text style={styles.label}>WAS YOUR BABY A PREMATURE BABY (BORN BEFORE 37 WEEKS)?</Text>
           <View style={styles.pairRow}>
             {['Yes', 'No'].map((opt, i) => (
               <TouchableOpacity

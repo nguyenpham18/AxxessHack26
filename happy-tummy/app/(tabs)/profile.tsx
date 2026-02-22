@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,53 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { getMe } from '@/lib/api';
+import { router } from 'expo-router';
+
+type UserData = {
+  id: number;
+  username: string;
+  first_name: string;
+};
 
 export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = React.useState(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch user data on screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUserData();
+    }, [])
+  );
+
+  const fetchUserData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await getMe();
+      setUserData(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load profile';
+      setError(message);
+      console.error('Error fetching user data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignOut = () => {
+    // Clear session and navigate to login
+    router.replace('/(auth)/login');
+  };
 
   const ProfileOption = ({ 
     icon, 
@@ -59,18 +99,37 @@ export default function ProfileScreen() {
 
         {/* User Profile Section */}
         <View style={styles.section}>
-          <View style={styles.profileCard}>
-            <View style={styles.profileAvatar}>
-              <Ionicons name="person" size={32} color={Colors.white} />
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.red} />
             </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>John Doe</Text>
-              <Text style={styles.profileEmail}>john.doe@example.com</Text>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle-outline" size={32} color={Colors.red} />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={fetchUserData}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.editButton}>
-              <Ionicons name="pencil" size={16} color={Colors.red} />
-            </TouchableOpacity>
-          </View>
+          ) : userData ? (
+            <View style={styles.profileCard}>
+              <View style={styles.profileAvatar}>
+                <Text style={styles.avatarInitial}>
+                  {userData.first_name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName}>{userData.first_name}</Text>
+                <Text style={styles.profileEmail}>@{userData.username}</Text>
+              </View>
+              <TouchableOpacity style={styles.editButton}>
+                <Ionicons name="pencil" size={16} color={Colors.red} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
         {/* Account Settings */}
@@ -185,7 +244,10 @@ export default function ProfileScreen() {
 
         {/* Sign Out */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.signOutButton}>
+          <TouchableOpacity 
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+          >
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
@@ -217,6 +279,40 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  loadingContainer: {
+    marginHorizontal: 20,
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorContainer: {
+    marginHorizontal: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    gap: 12,
+    ...Shadow.sm,
+  },
+  errorText: {
+    fontFamily: FontFamily.body,
+    fontSize: 14,
+    color: Colors.red,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: Colors.red,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: Radius.md,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 14,
+    color: Colors.white,
+  },
   sectionTitle: {
     fontFamily: FontFamily.bodyBold,
     fontSize: 16,
@@ -243,6 +339,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.red,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontFamily: FontFamily.displayBold,
+    fontSize: 24,
+    color: Colors.white,
   },
   profileInfo: {
     flex: 1,

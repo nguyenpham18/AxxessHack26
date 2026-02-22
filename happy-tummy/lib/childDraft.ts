@@ -7,6 +7,7 @@ export type ChildDraft = {
   earlyBorn?: boolean | null;
   deliveryMethod?: number | null;
   enviChange?: number | null;
+  parentConsent?: boolean | null;
 };
 
 const draft: ChildDraft = {};

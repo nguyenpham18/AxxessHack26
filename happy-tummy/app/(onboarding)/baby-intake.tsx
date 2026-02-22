@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -69,6 +69,10 @@ export default function BabyIntakeScreen() {
   const [waterUnder16,setWaterUnder16] = useState<boolean | null>(null); // Q10
   const [hardStool,   setHardStool]    = useState<boolean | null>(null); // Q11
   const [eatsFruits,  setEatsFruits]   = useState<boolean | null>(null); // Q12
+  
+  // Parental consent
+  const [parentConsent, setParentConsent] = useState<boolean | null>(null);
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -76,6 +80,42 @@ export default function BabyIntakeScreen() {
     { label: '6–12 months', value: '6to12'   },
     { label: '12–24 months',value: '12to24'  },
   ];
+
+  // Calculate age in months from DOB string (format: MM/DD/YYYY)
+  const calculateAgeInMonths = (dobString: string): number | null => {
+    try {
+      const [mm, dd, yyyy] = dobString.split('/').map(Number);
+      const dob = new Date(yyyy, mm - 1, dd); // month is 0-based in JS
+      const today = new Date();
+
+      let months = (today.getFullYear() - dob.getFullYear()) * 12;
+      months += today.getMonth() - dob.getMonth();
+
+      // Adjust if birthday hasn't occurred this month
+      if (today.getDate() < dob.getDate()) {
+        months--;
+      }
+
+      return Math.max(0, months);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Auto-set age range based on child's DOB
+  useEffect(() => {
+    const draft = getChildDraft();
+    if (draft.dob) {
+      const ageMonths = calculateAgeInMonths(draft.dob);
+      if (ageMonths !== null) {
+        if (ageMonths >= 6 && ageMonths < 12) {
+          setAgeRange('6to12');
+        } else if (ageMonths >= 12 && ageMonths <= 24) {
+          setAgeRange('12to24');
+        }
+      }
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -186,12 +226,49 @@ export default function BabyIntakeScreen() {
           </View>
         )}
 
+        {/* Parental Consent Section */}
+        {ageRange !== null && (
+          <View style={styles.consentWrap}>
+            <Text style={styles.consentTitle}>Parental Consent</Text>
+            <View style={styles.consentCheckRow}>
+              <TouchableOpacity
+                onPress={() => setParentConsent(!parentConsent)}
+                style={styles.checkboxContainer}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    parentConsent === true && styles.checkboxChecked,
+                  ]}
+                >
+                  {parentConsent === true && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.consentText}>
+                I acknowledge that I am the parent/guardian and consent to the collection and use of my child's data as described in our privacy policy.
+              </Text>
+            </View>
+            {parentConsent === false && (
+              <Text style={styles.consentError}>
+                Please provide your consent to continue.
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Done button — always visible once age is selected */}
         {ageRange !== null && (
           <AppButton
             label={loading ? 'Saving...' : "All done! Let's go!"}
             variant="yellow"
             onPress={async () => {
+              if (parentConsent !== true) {
+                setParentConsent(false);
+                return;
+              }
               if (loading) return;
               setError('');
               setLoading(true);
@@ -207,6 +284,7 @@ export default function BabyIntakeScreen() {
                   early_born: draft.earlyBorn ? 1 : 0,
                   delivery_method: draft.deliveryMethod ?? null,
                   envi_change: null,
+                  parent_consent: parentConsent === true,
                 });
                 resetChildDraft();
                 router.replace('/(tabs)');
@@ -461,5 +539,105 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.gray500,
     lineHeight: 16,
+  },
+  noticeBox: {
+    backgroundColor: Colors.white,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
+    ...Shadow.sm,
+  },
+  noticeText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
+    lineHeight: 18,
+  },
+  noticeBullet: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
+    lineHeight: 18,
+  },
+
+  // Parental Consent
+  consentWrap: {
+    backgroundColor: Colors.white,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 12,
+    ...Shadow.md,
+    marginTop: 16,
+  },
+  consentTitle: {
+    fontFamily: FontFamily.bodyBlack,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: Colors.gray900,
+    textTransform: 'uppercase',
+  },
+  consentCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checkboxContainer: {
+    paddingTop: 2,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    borderRadius: 6,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.red,
+    borderColor: Colors.red,
+  },
+  checkmark: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.white,
+  },
+  consentText: {
+    flex: 1,
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.gray900,
+    lineHeight: 19,
+  },
+  consentError: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.redDark,
+    marginTop: 4,
+  },
+  consentRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  consentLabel: {
+    flex: 1,
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 13,
+    color: Colors.gray900,
+  },
+  consentErrorText: {
+    marginTop: 8,
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.redDark,
   },
 });

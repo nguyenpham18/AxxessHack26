@@ -29,7 +29,7 @@ export default function LoginScreen() {
 
     try {
       const token = await loginUser({ username, password });
-      setAccessToken(token.access_token);
+      await setAccessToken(token.access_token);
       router.replace('/(tabs)');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';

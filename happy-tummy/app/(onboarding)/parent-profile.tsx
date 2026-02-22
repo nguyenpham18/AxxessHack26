@@ -21,7 +21,7 @@ const COMM_STYLES = [
   { label: 'No'},
 ];
 
-export default function MomProfileScreen() {
+export default function ParentProfileScreen() {
   const [avatar, setAvatar] = useState(0);
   const [name, setName] = useState('');
   const [commStyle, setCommStyle] = useState(0);
@@ -53,9 +53,9 @@ export default function MomProfileScreen() {
             />
           </View>
 
-          {/* first-time mom */}
+          {/* first-time parent */}
           <View>
-            <Text style={styles.label}>Are you a first-time mom?</Text>
+            <Text style={styles.label}>Are you a first-time parent?</Text>
             <View style={styles.radioList}>
               {COMM_STYLES.map((opt, i) => (
                 <TouchableOpacity

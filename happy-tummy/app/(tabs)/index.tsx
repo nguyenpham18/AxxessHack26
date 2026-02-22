@@ -11,12 +11,50 @@ import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getMe, listChildren, type ChildResponse } from '@/lib/api';
-import { getCoachMessage } from "../../lib/featherless";
 
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
-  const [parentName, setParentName] = useState('');
   const [children, setChildren] = useState<ChildResponse[]>([]);
+  const [parentName, setParentName] = useState('');
+
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  const getTodayInsight = (child: ChildResponse) => {
+    const hasAllergyFlag = child.allergies === 1;
+    const isEarlyBorn = child.early_born === 1;
+
+    if (hasAllergyFlag) {
+      return {
+        borderColor: Colors.yellow,
+        iconName: 'warning',
+        iconColor: Colors.yellow,
+        title: `${child.name ?? 'Baby'} may need allergy-safe meals today`,
+        desc: 'Use familiar foods first and introduce only one new food at a time. Track stool and comfort after meals.',
+      };
+    }
+
+    if (isEarlyBorn) {
+      return {
+        borderColor: Colors.red,
+        iconName: 'heart',
+        iconColor: Colors.red,
+        title: `${child.name ?? 'Baby'} needs gentle feeding pacing today`,
+        desc: 'Keep portions small and frequent with hydration breaks to support digestion and comfort throughout the day.',
+      };
+    }
+
+    return {
+      borderColor: Colors.green,
+      iconName: 'checkmark-circle',
+      iconColor: Colors.green,
+      title: `${child.name ?? 'Baby'} is on track today`,
+      desc: 'Maintain balanced meals with fruits, vegetables, and water to keep bowel movement and tummy comfort stable.',
+    };
+  };
 
   useEffect(() => {
     getMe()
@@ -27,35 +65,16 @@ export default function DashboardScreen() {
       .catch(() => {});
   }, []);
 
-  const [coachText, setCoachText] = useState("");
-  const [loadingCoach, setLoadingCoach] = useState(false);
-  const [coachError, setCoachError] = useState("");
-
   const handleAddBaby = () => {
-    router.push('/baby-profile');
+    router.push('/(onboarding)/baby-profile');
   };
 
-  const handleGetAdvice = async () => {
-    setLoadingCoach(true);
-    setCoachError("");
-    try {
-      const payload = {
-        baby: { ageMonths: 10 },
-        insights: ["Low hydration recently"],
-        recommendations: {
-          try_today: ["pear"],
-          avoid_today: ["rice_cereal"],
-          habit_tip: "Offer water with meals",
-        },
-      };
-
-      const data = await getCoachMessage(payload);
-      setCoachText(data.result.summary);
-    } catch (e: any) {
-      setCoachError(e?.message ?? "Failed to get advice");
-    } finally {
-      setLoadingCoach(false);
-    }
+  const handleOpenBabyProfile = (index: number, userKey: number) => {
+    setSelectedBaby(index);
+    router.push({
+      pathname: '/(tabs)/baby/[id]',
+      params: { id: String(userKey) },
+    });
   };
 
   return (
@@ -81,24 +100,32 @@ export default function DashboardScreen() {
         {/* ── Baby profiles ── */}
         <Text style={styles.sectionTitle}>Your Babies</Text>
 
-        {/* Maya */}
-        <TouchableOpacity
-          style={[styles.babyCard, selectedBaby === 0 && styles.babyCardActive]}
-          onPress={() => setSelectedBaby(0)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.babyAvatar}>
-            <MaterialCommunityIcons name="baby-face" size={24} color={Colors.red} />
-          </View>
-          <View style={styles.babyInfo}>
-            <Text style={styles.babyName}>Maya</Text>
-            <Text style={styles.babyAge}>7 months · Formula-fed</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: Colors.greenPale }]}>
-            <Ionicons name="checkmark-circle" size={16} color={Colors.green} />
-            <Text style={styles.badgeLabel}>Good</Text>
-          </View>
-        </TouchableOpacity>
+        {children.length === 0 && (
+          <Text style={styles.emptyText}>No baby profiles yet. Add one below.</Text>
+        )}
+
+        {children.map((child, index) => (
+          <TouchableOpacity
+            key={child.user_key}
+            style={[styles.babyCard, selectedBaby === index && styles.babyCardActive]}
+            onPress={() => handleOpenBabyProfile(index, child.user_key)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.babyAvatar}>
+              <MaterialCommunityIcons name="baby-face" size={24} color={Colors.red} />
+            </View>
+            <View style={styles.babyInfo}>
+              <Text style={styles.babyName}>{child.name ?? 'Baby'}</Text>
+              <Text style={styles.babyAge}>
+                {child.age ? `${child.age} months` : 'Age not set'}
+              </Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: Colors.greenPale }]}>
+              <Ionicons name="checkmark-circle" size={16} color={Colors.green} />
+              <Text style={styles.badgeLabel}>Good</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
 
         {/* Add baby */}
         <TouchableOpacity
@@ -115,52 +142,24 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
 
-        <Text style={styles.sectionTitle}>
-          Today's Insights — {children[selectedBaby]?.name ?? 'Your Baby'}
-        </Text>
+        {children.length > 0 && (
+          <Text style={styles.sectionTitle}>Today's Insights · {todayLabel}</Text>
+        )}
 
-        <View style={[styles.insightCard, { borderLeftColor: Colors.yellow }]}
-        >
-          <View style={styles.insightTop}>
-            <Ionicons name="warning" size={18} color={Colors.yellow} />
-            <Text style={styles.insightTitle}>No poop logged — Day 2</Text>
-            <Text style={styles.insightTime}>Today</Text>
-          </View>
-
-          <Text style={styles.insightDesc}>
-            Maya's been a bit gassy too. Try gentle tummy massage tonight — it usually helps her!
-          </Text>
-
-          <TouchableOpacity onPress={handleGetAdvice}>
-            <Text style={styles.insightCta}>
-              {loadingCoach ? "Loading tips..." : "See AI tips →"}
-            </Text>
-          </TouchableOpacity>
-
-          {!!coachError && (
-            <Text style={[styles.insightDesc, { marginTop: 8 }]}>
-              {coachError}
-            </Text>
-          )}
-
-          {!!coachText && (
-            <Text style={[styles.insightDesc, { marginTop: 8 }]}>
-              {coachText}
-            </Text>
-          )}
-        </View>
-
-        <View style={[styles.insightCard, { borderLeftColor: Colors.green }]}
-        >
-          <View style={styles.insightTop}>
-            <Ionicons name="checkmark-circle" size={18} color={Colors.green} />
-            <Text style={styles.insightTitle}>Sweet potato — all clear!</Text>
-            <Text style={styles.insightTime}>Day 3</Text>
-          </View>
-          <Text style={styles.insightDesc}>
-            No digestive reaction after 72 hours. Safe to keep feeding! Great job, mama!
-          </Text>
-        </View>
+        {children.map((child) => {
+          const insight = getTodayInsight(child);
+          return (
+            <View key={`insight-${child.user_key}`} style={[styles.insightCard, { borderLeftColor: insight.borderColor }]}
+            >
+              <View style={styles.insightTop}>
+                <Ionicons name={insight.iconName as any} size={18} color={insight.iconColor} />
+                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Text style={styles.insightTime}>Today</Text>
+              </View>
+              <Text style={styles.insightDesc}>{insight.desc}</Text>
+            </View>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -186,12 +185,12 @@ const styles = StyleSheet.create({
   },
   hi: {
     fontFamily: FontFamily.body,
-    fontSize: 13,
+    fontSize: 15,
     color: 'rgba(255,255,255,0.75)',
   },
   name: {
     fontFamily: FontFamily.display,
-    fontSize: 22,
+    fontSize: 24,
     color: Colors.white,
     textShadowColor: 'rgba(0,0,0,0.15)',
     textShadowOffset: { width: 2, height: 2 },
@@ -228,7 +227,7 @@ const styles = StyleSheet.create({
   // Section title
   sectionTitle: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 15,
+    fontSize: 17,
     color: Colors.gray700,
     marginTop: 4,
   },
@@ -268,12 +267,12 @@ const styles = StyleSheet.create({
   babyInfo: { flex: 1 },
   babyName: {
     fontFamily: FontFamily.display,
-    fontSize: 16,
+    fontSize: 18,
     color: Colors.gray900,
   },
   babyAge: {
     fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.gray500,
     marginTop: 2,
   },
@@ -296,7 +295,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontFamily: FontFamily.body,
-    fontSize: 13,
+    fontSize: 15,
     color: Colors.gray500,
   },
 
@@ -325,12 +324,12 @@ const styles = StyleSheet.create({
   },
   addLabel: {
     fontFamily: FontFamily.display,
-    fontSize: 15,
+    fontSize: 17,
     color: Colors.gray900,
   },
   addSub: {
     fontFamily: FontFamily.body,
-    fontSize: 12,
+    fontSize: 14,
     color: Colors.gray500,
     marginTop: 1,
   },
@@ -354,26 +353,26 @@ const styles = StyleSheet.create({
   insightIcon: { fontSize: 17 },
   insightTitle: {
     fontFamily: FontFamily.displayBold,
-    fontSize: 14,
+    fontSize: 16,
     color: Colors.gray900,
     flex: 1,
   },
   insightTime: {
     fontFamily: FontFamily.bodyBlack,
-    fontSize: 10,
+    fontSize: 12,
     color: Colors.gray500,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   insightDesc: {
     fontFamily: FontFamily.body,
-    fontSize: 13,
+    fontSize: 15,
     color: Colors.gray700,
     lineHeight: 19,
   },
   insightCta: {
     fontFamily: FontFamily.bodyBold,
-    fontSize: 13,
+    fontSize: 15,
     color: Colors.red,
     marginTop: 8,
   },

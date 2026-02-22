@@ -1,5 +1,6 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Table
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, Table
 from sqlalchemy.orm import Mapped, mapped_column
+
 
 from app.db.base import Base
 
@@ -82,6 +83,7 @@ class DimUser(Base):
     early_born: Mapped[int | None] = mapped_column("EarlyBorn", Integer, nullable=True)
     delivery_method: Mapped[int | None] = mapped_column("DeliveryMethod", Integer, nullable=True)
     envi_change: Mapped[int | None] = mapped_column("EnviChange", Integer, nullable=True)
+    parent_consent: Mapped[bool] = mapped_column("ParentConsent", Boolean, nullable=False )
 
 
 class ParentChild(Base):

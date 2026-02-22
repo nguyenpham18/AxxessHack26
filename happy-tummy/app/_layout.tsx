@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
 import {
@@ -7,6 +7,7 @@ import {
   Nunito_900Black,
 } from '@expo-google-fonts/nunito';
 import * as SplashScreen from 'expo-splash-screen';
+import { initSession } from '@/lib/session';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -16,12 +17,17 @@ export default function RootLayout() {
     Nunito_800ExtraBold,
     Nunito_900Black,
   });
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync();
-  }, [fontsLoaded]);
+    initSession().finally(() => setSessionReady(true));
+  }, []);
 
-  if (!fontsLoaded) return null;
+  useEffect(() => {
+    if (fontsLoaded && sessionReady) SplashScreen.hideAsync();
+  }, [fontsLoaded, sessionReady]);
+
+  if (!fontsLoaded || !sessionReady) return null;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
