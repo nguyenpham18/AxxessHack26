@@ -11,6 +11,7 @@ class ChildCreate(BaseModel):
     early_born: int | None = None
     delivery_method: int | None = None
     envi_change: int | None = None
+    parent_consent: bool
 
 
 class ChildOut(BaseModel):
@@ -24,5 +25,6 @@ class ChildOut(BaseModel):
     early_born: int | None
     delivery_method: int | None
     envi_change: int | None
+    parent_consent: bool
 
     model_config = {"from_attributes": True}

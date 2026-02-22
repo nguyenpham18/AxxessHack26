@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -28,6 +28,12 @@ def create_child(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if payload.parent_consent is not True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Parental consent is required",
+        )
+
     child = DimUser(
         use_id=payload.use_id,
         name=payload.name,
@@ -38,6 +44,7 @@ def create_child(
         early_born=payload.early_born,
         delivery_method=payload.delivery_method,
         envi_change=payload.envi_change,
+        parent_consent=payload.parent_consent
     )
     db.add(child)
     db.flush()
