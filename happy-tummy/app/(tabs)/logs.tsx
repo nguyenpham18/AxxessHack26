@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,21 +10,23 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  GestureResponderEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 
 // ─── Constants ─────────────────────────────────────────────
 import { getCoachMessage, getChatReply, searchNutrition } from '@/lib/featherless';
+import { listChildren } from '@/lib/api';
 
 const STOOL_TYPES = [
-  { type: 1, label: 'Type 1', desc: 'Hard lumps'   },
-  { type: 2, label: 'Type 2', desc: 'Lumpy'        },
-  { type: 3, label: 'Type 3', desc: 'Cracked'      },
-  { type: 4, label: 'Type 4', desc: 'Smooth'       },
-  { type: 5, label: 'Type 5', desc: 'Soft blobs'   },
-  { type: 6, label: 'Type 6', desc: 'Fluffy'       },
-  { type: 7, label: 'Type 7', desc: 'Watery'       },
+  { type: 1, label: 'Type 1', short: 'Hard lumps',  desc: 'Separate hard lumps, like pebbles. Difficult to pass — often a sign of constipation. Increase fluids and fiber.' },
+  { type: 2, label: 'Type 2', short: 'Lumpy',       desc: 'Sausage-shaped but lumpy and hard. Mild constipation — may need more water, fruit, or movement.' },
+  { type: 3, label: 'Type 3', short: 'Cracked',     desc: 'Sausage-shaped with cracks on the surface. Normal but on the firmer side.' },
+  { type: 4, label: 'Type 4', short: 'Smooth',      desc: 'Smooth and soft, like a banana. This is the ideal, healthy stool for your baby.' },
+  { type: 5, label: 'Type 5', short: 'Soft blobs',  desc: 'Soft blobs with clear edges. Normal and common in babies, especially with a varied diet.' },
+  { type: 6, label: 'Type 6', short: 'Mushy',       desc: 'Fluffy, mushy pieces with ragged edges. May indicate mild diarrhea — monitor hydration.' },
+  { type: 7, label: 'Type 7', short: 'Watery',      desc: 'Entirely liquid with no solid pieces. Diarrhea — keep baby hydrated and contact pediatrician if it persists.' },
 ];
 
 const stoolColor = (type: number) => {
@@ -39,25 +41,23 @@ const HYDRATION_OPTIONS = [
   { label: 'Good',   desc: 'More than usual', icon: 'thunderstorm'  as const },
 ];
 
-const UNIT_TO_GRAMS: Record<string, number> = {
-  tsp:    4,
-  tbsp:   12,
-  oz:     28,
-  cup:    120,
-  pieces: 30,
-  strips: 20,
-  g:      1,
+const getServingGrams = (foodName: string): number => {
+  const name = foodName.toLowerCase();
+  if (name.includes('cereal') || name.includes('oatmeal')) return 30;
+  if (name.includes('puree') || name.includes('baby food')) return 60;
+  if (name.includes('banana')) return 120;
+  if (name.includes('apple')) return 100;
+  if (name.includes('milk') || name.includes('formula')) return 240;
+  if (name.includes('yogurt')) return 150;
+  if (name.includes('rice')) return 80;
+  if (name.includes('bread')) return 30;
+  if (name.includes('juice')) return 120;
+  if (name.includes('egg')) return 50;
+  if (name.includes('chicken') || name.includes('meat')) return 85;
+  if (name.includes('cheese')) return 28;
+  if (name.includes('chips')) return 28;
+  return 100;
 };
-
-const UNIT_OPTIONS = [
-  { label: 'tsp',    desc: 'teaspoon'   },
-  { label: 'tbsp',   desc: 'tablespoon' },
-  { label: 'oz',     desc: 'ounce'      },
-  { label: 'cup',    desc: 'cup'        },
-  { label: 'pieces', desc: 'pieces'     },
-  { label: 'strips', desc: 'strips'     },
-  { label: 'g',      desc: 'grams'      },
-];
 
 // ─── Types ─────────────────────────────────────────────────
 interface NutritionInfo {
@@ -70,8 +70,7 @@ interface NutritionInfo {
 interface FoodTag {
   id:        string;
   name:      string;
-  quantity:  number;
-  unit:      string;
+  servings:  number;
   gramsEst:  number;
   nutrition: NutritionInfo | null;
 }
@@ -101,20 +100,6 @@ const scaleNutrition = (nutrition: NutritionInfo | null, grams: number) => {
   };
 };
 
-// Helper to get smart defaults based on food name
-const getSmartDefaults = (foodName: string): { quantity: number; unit: string } => {
-  const name = foodName.toLowerCase();
-  
-  // Baby foods and purees
-  if (name.includes('cereal') || name.includes('oatmeal')) return { quantity: 2, unit: 'tbsp' };
-  if (name.includes('puree') || name.includes('baby food')) return { quantity: 3, unit: 'tbsp' };
-  if (name.includes('banana') || name.includes('apple')) return { quantity: 0.25, unit: 'pieces' };
-  if (name.includes('milk') || name.includes('formula')) return { quantity: 2, unit: 'oz' };
-  if (name.includes('yogurt')) return { quantity: 2, unit: 'tbsp' };
-  
-  // Default
-  return { quantity: 1, unit: 'tbsp' };
-};
 
 // ─── Section Card ──────────────────────────────────────────
 function SectionCard({
@@ -177,64 +162,146 @@ function MiniLabel({ text }: { text: string }) {
   return <Text style={styles.miniLabel}>{text}</Text>;
 }
 
-// ─── Quantity Prompt Modal ─────────────────────────────────
+// ─── Stool Slider ────────────────────────────────────────────
+const SLIDER_PADDING = 16;
+const THUMB_SIZE = 30;
+
+function StoolSlider({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
+  const trackLayout = useRef({ x: 0, width: 0 });
+  const trackRef = useRef<View>(null);
+  const [width, setWidth] = useState(0);
+
+  const valueFromPageX = useCallback((pageX: number) => {
+    const trackW = trackLayout.current.width;
+    if (trackW <= 0) return 4;
+    const rel = pageX - trackLayout.current.x - THUMB_SIZE / 2;
+    const usable = trackW - THUMB_SIZE;
+    const ratio = Math.max(0, Math.min(1, rel / usable));
+    return Math.max(1, Math.min(7, Math.round(1 + ratio * 6)));
+  }, []);
+
+  const handleTouch = useCallback((e: GestureResponderEvent) => {
+    onChange(valueFromPageX(e.nativeEvent.pageX));
+  }, [onChange, valueFromPageX]);
+
+  const positionForValue = (v: number) => width > 0 ? ((v - 1) / 6) * (width - THUMB_SIZE) : 0;
+  const color = stoolColor(value ?? 4);
+
+  return (
+    <View style={sliderStyles.wrap}>
+      <View style={sliderStyles.labels}>
+        <Text style={sliderStyles.endLabel}>Hard</Text>
+        <Text style={sliderStyles.endLabel}>Watery</Text>
+      </View>
+      <View
+        ref={trackRef}
+        style={sliderStyles.track}
+        onLayout={(e) => {
+          setWidth(e.nativeEvent.layout.width);
+          trackRef.current?.measure((_fx, _fy, w, _h, px) => {
+            trackLayout.current = { x: px, width: w };
+          });
+        }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={handleTouch}
+        onResponderMove={handleTouch}
+      >
+        <View style={sliderStyles.line} />
+        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+          <Text
+            key={n}
+            style={[
+              sliderStyles.tickLabel,
+              { left: width > 0 ? ((n - 1) / 6) * (width - THUMB_SIZE) + THUMB_SIZE / 2 - 6 : `${((n - 1) / 6) * 100}%` },
+              value === n && sliderStyles.tickLabelSel,
+            ]}
+          >
+            {n}
+          </Text>
+        ))}
+        <View
+          style={[
+            sliderStyles.thumb,
+            { left: positionForValue(value ?? 4), backgroundColor: color },
+          ]}
+        >
+          <Text style={sliderStyles.thumbText}>{value ?? 4}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const sliderStyles = StyleSheet.create({
+  wrap: { gap: 4, paddingHorizontal: 4 },
+  labels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4 },
+  endLabel: { fontFamily: FontFamily.body, fontSize: 10, color: Colors.gray500, textTransform: 'uppercase', letterSpacing: 0.5 },
+  track: { height: 90, justifyContent: 'center', position: 'relative' },
+  line: {
+    position: 'absolute',
+    left: THUMB_SIZE / 2,
+    right: THUMB_SIZE / 2,
+    height: 6,
+    backgroundColor: Colors.gray300,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: Colors.outline,
+  },
+  tick: { display: 'none' },
+  tickLabel: { position: 'absolute', top: 60, fontFamily: FontFamily.bodyBold, fontSize: 11, color: Colors.gray500, width: 12, textAlign: 'center' },
+  tickLabelSel: { fontFamily: FontFamily.displayBold, fontSize: 13, color: Colors.redDark },
+  thumb: {
+    position: 'absolute',
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: 24,
+    ...Shadow.sm,
+  },
+  thumbText: { fontFamily: FontFamily.displayBold, fontSize: 13, color: Colors.white },
+});
+
+// ─── Serving Prompt Modal ─────────────────────────────────
 function QuantityPrompt({
   food, onConfirm, onCancel,
 }: {
-  food: { name: string; nutrition: NutritionInfo | null };
-  onConfirm: (quantity: number, unit: string) => void;
+  food: { name: string; nutrition: NutritionInfo | null; availableUnits?: string[] };
+  onConfirm: (servings: number) => void;
   onCancel: () => void;
 }) {
-  // Get smart defaults
-  const defaults = getSmartDefaults(food.name);
-  const [quantity, setQuantity] = useState(defaults.quantity);
-  const [unit,     setUnit]     = useState(defaults.unit);
-
-  const grams  = quantity * (UNIT_TO_GRAMS[unit] ?? 30);
-  const scaled = scaleNutrition(food.nutrition, grams);
-
-  // Quick add with defaults
-  const handleQuickAdd = () => {
-    onConfirm(defaults.quantity, defaults.unit);
-  };
+  const [servings, setServings] = useState(1);
+  const servingGrams = getServingGrams(food.name);
+  const totalGrams = servings * servingGrams;
+  const scaled = scaleNutrition(food.nutrition, totalGrams);
 
   return (
     <Modal transparent animationType="slide">
       <View style={promptStyles.overlay}>
         <View style={promptStyles.sheet}>
           <View style={promptStyles.handle} />
-          <Text style={promptStyles.title}>How much did Maya have?</Text>
+          <Text style={promptStyles.title}>How many servings?</Text>
           <Text style={promptStyles.foodName}>{food.name}</Text>
+          <Text style={promptStyles.servingInfo}>1 serving ≈ {servingGrams}g</Text>
 
-          {/* Quick add suggestion */}
-          <TouchableOpacity 
-            style={promptStyles.quickAddBtn} 
-            onPress={handleQuickAdd}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="flash" size={18} color={Colors.white} />
-            <Text style={promptStyles.quickAddText}>
-              Quick Add: {defaults.quantity} {defaults.unit}
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={promptStyles.orText}>or customize amount:</Text>
-
-          {/* Existing quantity stepper and unit selector - keep exactly as is */}
           <View style={promptStyles.stepperRow}>
             <TouchableOpacity
-              onPress={() => setQuantity(Math.max(0.1, +(quantity - 0.25).toFixed(2)))}
+              onPress={() => setServings(Math.max(0.5, +(servings - 0.5).toFixed(1)))}
               style={promptStyles.stepBtn}
               activeOpacity={0.8}
             >
               <Ionicons name="remove" size={20} color={Colors.white} />
             </TouchableOpacity>
             <View style={promptStyles.quantityBox}>
-              <Text style={promptStyles.quantityNum}>{quantity}</Text>
-              <Text style={promptStyles.quantityUnit}>{unit}</Text>
+              <Text style={promptStyles.quantityNum}>{servings}</Text>
+              <Text style={promptStyles.quantityUnit}>{servings === 1 ? 'serving' : 'servings'}</Text>
             </View>
             <TouchableOpacity
-              onPress={() => setQuantity(+(quantity + 0.25).toFixed(2))}
+              onPress={() => setServings(+(servings + 0.5).toFixed(1))}
               style={promptStyles.stepBtn}
               activeOpacity={0.8}
             >
@@ -242,33 +309,10 @@ function QuantityPrompt({
             </TouchableOpacity>
           </View>
 
-          {/* Unit selector */}
-          <Text style={promptStyles.unitLabel}>UNIT</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={promptStyles.unitRow}
-          >
-            {UNIT_OPTIONS.map((u) => (
-              <TouchableOpacity
-                key={u.label}
-                onPress={() => setUnit(u.label)}
-                style={[promptStyles.unitBtn, unit === u.label && promptStyles.unitBtnSel]}
-                activeOpacity={0.8}
-              >
-                <Text style={[promptStyles.unitBtnLabel, unit === u.label && promptStyles.unitBtnLabelSel]}>
-                  {u.label}
-                </Text>
-                <Text style={promptStyles.unitBtnDesc}>{u.desc}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Nutrition preview - keep exactly as is */}
           {scaled && (
             <View style={promptStyles.nutritionPreview}>
               <Text style={promptStyles.nutritionPreviewTitle}>
-                Estimated for {quantity} {unit} (~{Math.round(grams)}g)
+                Estimated for {servings} {servings === 1 ? 'serving' : 'servings'} (~{Math.round(totalGrams)}g)
               </Text>
               <View style={promptStyles.pillRow}>
                 {scaled.calories !== null && (
@@ -299,18 +343,17 @@ function QuantityPrompt({
             </View>
           )}
 
-          {/* Buttons */}
           <View style={promptStyles.btnRow}>
             <TouchableOpacity onPress={onCancel} style={promptStyles.cancelBtn} activeOpacity={0.8}>
               <Text style={promptStyles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => onConfirm(quantity, unit)}
+              onPress={() => onConfirm(servings)}
               style={promptStyles.confirmBtn}
               activeOpacity={0.8}
             >
               <Ionicons name="add-circle-outline" size={18} color={Colors.white} />
-              <Text style={promptStyles.confirmBtnText}>Add Custom</Text>
+              <Text style={promptStyles.confirmBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -385,43 +428,12 @@ const promptStyles = StyleSheet.create({
     fontSize: 13,
     color: Colors.gray500,
   },
-  unitLabel: {
-    fontFamily: FontFamily.bodyBlack,
-    fontSize: 10,
-    letterSpacing: 1,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-  },
-  unitRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  unitBtn: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderWidth: 2.5,
-    borderColor: Colors.gray300,
-    borderRadius: Radius.lg,
-    backgroundColor: Colors.white,
-    shadowColor: Colors.gray300,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 2,
-  },
-  unitBtnSel: {
-    borderColor: Colors.outline,
-    backgroundColor: Colors.redPale,
-    ...Shadow.sm,
-  },
-  unitBtnLabel: {
-    fontFamily: FontFamily.displayBold,
-    fontSize: 14,
-    color: Colors.gray700,
-  },
-  unitBtnLabelSel: { color: Colors.redDark },
-  unitBtnDesc: {
+  servingInfo: {
     fontFamily: FontFamily.body,
-    fontSize: 9,
+    fontSize: 13,
     color: Colors.gray500,
+    textAlign: 'center',
+    marginTop: -8,
   },
   nutritionPreview: {
     backgroundColor: Colors.white,
@@ -490,31 +502,6 @@ const promptStyles = StyleSheet.create({
     fontSize: 15,
     color: Colors.white,
   },
-  quickAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    backgroundColor: Colors.green,
-    borderRadius: Radius.pill,
-    borderWidth: 3,
-    borderColor: Colors.outline,
-    ...Shadow.md,
-    marginVertical: 8,
-  },
-  quickAddText: {
-    fontFamily: FontFamily.displayBold,
-    fontSize: 15,
-    color: Colors.white,
-  },
-  orText: {
-    fontFamily: FontFamily.body,
-    fontSize: 12,
-    color: Colors.gray500,
-    textAlign: 'center',
-    marginVertical: 4,
-  },
 });
 
 // ─── Food Tag Item ──────────────────────────────────────────
@@ -534,7 +521,7 @@ function FoodTagItem({
         <View style={tagStyles.tagInfo}>
           <Text style={tagStyles.tagName}>{tag.name}</Text>
           <Text style={tagStyles.tagQty}>
-            {tag.quantity} {tag.unit} · ~{Math.round(tag.gramsEst)}g
+            {tag.servings} {tag.servings === 1 ? 'serving' : 'servings'} · ~{Math.round(tag.gramsEst)}g
           </Text>
         </View>
         <TouchableOpacity
@@ -641,7 +628,7 @@ function FoodSearchSection({
   const [results,     setResults]     = useState<any[]>([]);
   const [searching,   setSearching]   = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [pending,     setPending]     = useState<{ name: string; nutrition: NutritionInfo | null } | null>(null);
+  const [pending,     setPending]     = useState<{ name: string; nutrition: NutritionInfo | null; availableUnits?: string[] } | null>(null);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -665,20 +652,20 @@ function FoodSearchSection({
         sugar:    result.sugar,
         protein:  result.protein,
       } : null,
+      availableUnits: result.availableUnits,
     });
     setResults([]);
     setShowResults(false);
     setQuery('');
   };
 
-  const handleConfirm = (quantity: number, unit: string) => {
+  const handleConfirm = (servings: number) => {
     if (!pending) return;
-    const grams = quantity * (UNIT_TO_GRAMS[unit] ?? 30);
+    const grams = servings * getServingGrams(pending.name);
     onAdd({
       id:        Date.now().toString(),
       name:      pending.name,
-      quantity,
-      unit,
+      servings,
       gramsEst:  grams,
       nutrition: pending.nutrition,
     });
@@ -888,12 +875,23 @@ const searchStyles = StyleSheet.create({
 
 // ─── Main Screen ───────────────────────────────────────────
 export default function DailyLogScreen() {
-  const [stoolType, setStoolType] = useState<number | null>(null);
+  const [babyName,  setBabyName]  = useState('Baby');
+  const [stoolType, setStoolType] = useState<number | null>(4);
   const [frequency, setFrequency] = useState(0);
   const [hydration, setHydration] = useState<number | null>(null);
   const [foodTags,  setFoodTags]  = useState<FoodTag[]>([]);
   const [saved,     setSaved]     = useState(false);
   const [saving,    setSaving]    = useState(false);
+
+  useEffect(() => {
+    listChildren()
+      .then((children) => {
+        if (children.length > 0 && children[0].name) {
+          setBabyName(children[0].name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const addFoodTag    = (tag: FoodTag) => setFoodTags((prev) => [...prev, tag]);
   const removeFoodTag = (id: string)   => setFoodTags((prev) => prev.filter((t) => t.id !== id));
@@ -912,8 +910,7 @@ export default function DailyLogScreen() {
       hydration:      HYDRATION_OPTIONS[hydration].label,
       foodIntake:     foodTags.map((t) => ({
         name:      t.name,
-        quantity:  t.quantity,
-        unit:      t.unit,
+        servings:  t.servings,
         gramsEst:  t.gramsEst,
         nutrition: scaleNutrition(t.nutrition, t.gramsEst),
       })),
@@ -943,7 +940,7 @@ export default function DailyLogScreen() {
           <View>
             <Text style={styles.headerTitle}>Daily Log</Text>
             <Text style={styles.headerSub}>
-              Maya · {new Date().toLocaleDateString('en-US', {
+              {babyName} · {new Date().toLocaleDateString('en-US', {
                 weekday: 'long', month: 'short', day: 'numeric',
               })}
             </Text>
@@ -959,44 +956,27 @@ export default function DailyLogScreen() {
 
         {/* ── 1. Stool Type ── */}
         <SectionCard iconName="medical-outline" title="Stool Type">
-          <MiniLabel text="Bristol Stool Scale — select today's type" />
-          <View style={styles.stoolGrid}>
-            {STOOL_TYPES.map((s) => (
-              <TouchableOpacity
-                key={s.type}
-                onPress={() => setStoolType(s.type)}
-                style={[styles.stoolBtn, stoolType === s.type && styles.stoolBtnSel]}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.stoolDot, { backgroundColor: stoolColor(s.type) }]} />
-                <Text style={[styles.stoolLabel, stoolType === s.type && styles.stoolLabelSel]}>
-                  {s.label}
-                </Text>
-                <Text style={styles.stoolDesc}>{s.desc}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {stoolType !== null && (
-            <View style={[
-              styles.hintBox,
-              stoolType <= 2                           && { backgroundColor: '#FFF3E0'      },
-              stoolType >= 3 && stoolType <= 5         && { backgroundColor: Colors.greenPale },
-              stoolType >= 6                           && { backgroundColor: Colors.redPale  },
-            ]}>
-              <Ionicons
-                name={stoolType <= 2 || stoolType >= 6 ? 'warning-outline' : 'checkmark-circle-outline'}
-                size={14}
-                color={stoolType <= 2 ? '#F5A623' : stoolType >= 6 ? Colors.red : Colors.green}
-              />
-              <Text style={styles.hintText}>
-                {stoolType <= 2 && 'Types 1–2 may indicate constipation. Consider more fluids and fiber.'}
-                {stoolType === 3 && 'Type 3 is on the firmer side but within normal range.'}
-                {stoolType === 4 && 'Type 4 is ideal — smooth and easy to pass.'}
-                {stoolType === 5 && 'Type 5 is normal, slightly soft.'}
-                {stoolType >= 6 && 'Types 6–7 may indicate diarrhea. Monitor hydration closely.'}
-              </Text>
-            </View>
-          )}
+          <MiniLabel text="Bristol Stool Scale — slide to select" />
+          <StoolSlider value={stoolType} onChange={setStoolType} />
+          {stoolType !== null && (() => {
+            const selected = STOOL_TYPES.find((s) => s.type === stoolType)!;
+            const isWarning = stoolType <= 2 || stoolType >= 6;
+            const bgColor = stoolType <= 2 ? '#FFF3E0' : stoolType >= 6 ? Colors.redPale : Colors.greenPale;
+            const iconColor = stoolType <= 2 ? '#F5A623' : stoolType >= 6 ? Colors.red : Colors.green;
+            return (
+              <View style={[styles.hintBox, { backgroundColor: bgColor }]}>
+                <Ionicons
+                  name={isWarning ? 'warning-outline' : 'checkmark-circle-outline'}
+                  size={16}
+                  color={iconColor}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.hintTitle}>{selected.label} — {selected.short}</Text>
+                  <Text style={styles.hintText}>{selected.desc}</Text>
+                </View>
+              </View>
+            );
+          })()}
         </SectionCard>
 
         {/* ── 2. Stool Frequency ── */}
@@ -1032,7 +1012,7 @@ export default function DailyLogScreen() {
 
         {/* ── 3. Hydration ── */}
         <SectionCard iconName="water-outline" title="Hydration">
-          <MiniLabel text="How much did Maya drink today?" />
+          <MiniLabel text={`How much did ${babyName} drink today?`} />
           <View style={styles.hydrationRow}>
             {HYDRATION_OPTIONS.map((opt, i) => (
               <TouchableOpacity
@@ -1053,7 +1033,7 @@ export default function DailyLogScreen() {
 
         {/* ── 4. Food Intake ── */}
         <SectionCard iconName="restaurant-outline" title="Food Intake">
-          <MiniLabel text="What did Maya eat today?" />
+          <MiniLabel text={`What did ${babyName} eat today?`} />
           <FoodSearchSection
             foodTags={foodTags}
             onAdd={addFoodTag}
@@ -1083,7 +1063,7 @@ export default function DailyLogScreen() {
             <Ionicons name="checkmark-circle" size={48} color={Colors.green} />
             <Text style={styles.savedTitle}>Log saved!</Text>
             <Text style={styles.savedDesc}>
-              Great job tracking today. Check the dashboard for AI insights based on Maya's patterns.
+              Great job tracking today. Check the dashboard for AI insights based on {babyName}'s patterns.
             </Text>
             <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
               <Ionicons name="add-circle-outline" size={16} color={Colors.gray900} />
@@ -1143,28 +1123,6 @@ const styles = StyleSheet.create({
   },
 
   // Stool
-  stoolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  stoolBtn: {
-    flex: 1,
-    minWidth: 44,
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderWidth: 2.5,
-    borderColor: Colors.gray300,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.white,
-    shadowColor: Colors.gray300,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 2,
-    gap: 4,
-  },
-  stoolBtnSel: { borderColor: Colors.outline, backgroundColor: Colors.redPale, ...Shadow.sm },
-  stoolDot:    { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: Colors.outline },
-  stoolLabel:  { fontFamily: FontFamily.bodyBold, fontSize: 10, color: Colors.gray700 },
-  stoolLabelSel: { color: Colors.redDark },
-  stoolDesc:   { fontFamily: FontFamily.body, fontSize: 8, color: Colors.gray500, textAlign: 'center' },
 
   // Hint
   hintBox: {
@@ -1177,6 +1135,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.gray300,
   },
+  hintTitle: { fontFamily: FontFamily.displayBold, fontSize: 13, color: Colors.gray900, marginBottom: 2 },
   hintText: { fontFamily: FontFamily.body, fontSize: 12, color: Colors.gray700, lineHeight: 18, flex: 1 },
 
   // Frequency
