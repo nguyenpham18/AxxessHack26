@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 
+import { getChatReply } from "../../lib/featherless";
+
 type MsgRole = 'ai' | 'user';
 
 interface Message {
@@ -24,43 +26,75 @@ const INITIAL_MESSAGES: Message[] = [
   {
     id: '1',
     role: 'ai',
-    text: "Hi Sarah!I know Maya well — ask me anything about her digestion and I'll give advice based on her specific logs!",
+    text: "Hi Sarah! I know Maya well — ask me anything about her digestion and I'll answer based on her logs.",
   },
 ];
 
-const QUICK_REPLIES = [
-  'Is this normal? 🤔',
-  'What should I try? 💡',
-  'Should I call my doctor? 📞',
-];
+
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (!text.trim()) return;
+
+    const userText = text.trim();
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      text: text.trim(),
+      text: userText,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const loadingId = (Date.now() + 1).toString();
+    const loadingMsg: Message = {
+      id: loadingId,
+      role: 'ai',
+      text: "Thinking...",
+    };
+
+    // Update UI immediately (user msg + thinking msg)
+    setMessages((prev) => [...prev, userMsg, loadingMsg]);
     setInput('');
 
-    // Placeholder AI response — will connect to backend later
-    setTimeout(() => {
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'ai',
-        text: "Thanks for letting me know! Based on Maya's logs, let me look into this for you... \n\n(AI response will appear here once connected to backend.)",
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 800);
+    try {
+      // Build conversation from the latest messages we KNOW (prev + new user)
+      const conversation = [...messages, userMsg]
+        .slice(-10)
+        .map((m) => ({
+          role: m.role === "ai" ? ("assistant" as const) : ("user" as const),
+          content: m.text,
+        }));
+
+      // TODO: Replace with real baby + logs from DB
+      const baby = { name: "Maya", ageMonths: 10, allergies: [] };
+      const recentLogs = [
+        { day: "today", stool: "none", hydration: "low", gas: "yes" },
+      ];
+
+      const data = await getChatReply({
+        baby,
+        recentLogs,
+        conversation,
+        userMessage: userText,
+      });
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === loadingId ? { ...m, text: data.reply } : m))
+      );
+    } catch (e: any) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === loadingId
+            ? { ...m, text: e?.message ?? "Load failed" }
+            : m
+        )
+      );
+    } finally {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+    }
   };
 
   return (
@@ -75,6 +109,9 @@ export default function ChatScreen() {
           <Text style={styles.headerStatus}>Always here for you</Text>
         </View>
       </View>
+
+      {/* Wave curve */}
+      <View style={styles.wave} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -96,16 +133,17 @@ export default function ChatScreen() {
                 msg.role === 'ai' ? styles.bubbleAi : styles.bubbleUser,
               ]}
             >
-              <Text style={[
-                styles.bubbleText,
-                msg.role === 'user' && styles.bubbleTextUser,
-              ]}>
+              <Text
+                style={[
+                  styles.bubbleText,
+                  msg.role === 'user' && styles.bubbleTextUser,
+                ]}
+              >
                 {msg.text}
               </Text>
             </View>
           ))}
         </ScrollView>
-
         {/* Input bar */}
         <View style={styles.inputBar}>
           <TextInput
@@ -141,10 +179,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.red,
     paddingTop: 16,
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 30,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 15,
   },
   aiAvatar: {
     width: 46,
@@ -266,5 +304,21 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 16,
     fontWeight: '700',
+  },
+
+    // Wave
+  wave: {
+    height: 32,
+    backgroundColor: Colors.gray100,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -24,
+  },
+    // Scroll
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 24,
+    gap: 12,
   },
 });

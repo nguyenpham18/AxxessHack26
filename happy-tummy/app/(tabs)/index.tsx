@@ -11,16 +11,44 @@ import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+import { getCoachMessage } from "../../lib/featherless";
+
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
+
+  const [coachText, setCoachText] = useState("");
+  const [loadingCoach, setLoadingCoach] = useState(false);
+  const [coachError, setCoachError] = useState("");
 
   const handleAddBaby = () => {
     router.push('/baby-profile');
   };
 
+  const handleGetAdvice = async () => {
+    setLoadingCoach(true);
+    setCoachError("");
+    try {
+      const payload = {
+        baby: { ageMonths: 10 },
+        insights: ["Low hydration recently"],
+        recommendations: {
+          try_today: ["pear"],
+          avoid_today: ["rice_cereal"],
+          habit_tip: "Offer water with meals",
+        },
+      };
+
+      const data = await getCoachMessage(payload);
+      setCoachText(data.result.summary);
+    } catch (e: any) {
+      setCoachError(e?.message ?? "Failed to get advice");
+    } finally {
+      setLoadingCoach(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
-
       {/* Red header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -38,7 +66,6 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
         {/* ── Baby profiles ── */}
         <Text style={styles.sectionTitle}>Your Babies</Text>
 
@@ -60,7 +87,7 @@ export default function DashboardScreen() {
             <Text style={styles.badgeLabel}>Good</Text>
           </View>
         </TouchableOpacity>
-        
+
         {/* Add baby */}
         <TouchableOpacity
           style={styles.addCard}
@@ -86,12 +113,28 @@ export default function DashboardScreen() {
             <Text style={styles.insightTitle}>No poop logged — Day 2</Text>
             <Text style={styles.insightTime}>Today</Text>
           </View>
+
           <Text style={styles.insightDesc}>
             Maya's been a bit gassy too. Try gentle tummy massage tonight — it usually helps her!
           </Text>
-          <TouchableOpacity onPress={() => {}}>
-            <Text style={styles.insightCta}>See tips →</Text>
+
+          <TouchableOpacity onPress={handleGetAdvice}>
+            <Text style={styles.insightCta}>
+              {loadingCoach ? "Loading tips..." : "See AI tips →"}
+            </Text>
           </TouchableOpacity>
+
+          {!!coachError && (
+            <Text style={[styles.insightDesc, { marginTop: 8 }]}>
+              {coachError}
+            </Text>
+          )}
+
+          {!!coachText && (
+            <Text style={[styles.insightDesc, { marginTop: 8 }]}>
+              {coachText}
+            </Text>
+          )}
         </View>
 
         {/* OK insight */}
@@ -105,7 +148,6 @@ export default function DashboardScreen() {
             No digestive reaction after 72 hours. Safe to keep feeding! Great job, mama!
           </Text>
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
