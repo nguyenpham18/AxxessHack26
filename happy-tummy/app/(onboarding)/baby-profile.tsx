@@ -13,9 +13,15 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setChildDraft } from '@/lib/childDraft';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+
+let DateTimePicker: any;
+let DateTimePickerEvent: any;
+if (Platform.OS !== 'web') {
+  DateTimePicker = require('@react-native-community/datetimepicker').default;
+  DateTimePickerEvent = require('@react-native-community/datetimepicker').DateTimePickerEvent;
+}
 
 const AVATARS = [
   { IconComponent: MaterialCommunityIcons, iconName: 'baby-face' as const, color: '#FF6B9D', label: 'Baby Girl' },
@@ -39,9 +45,16 @@ export default function BabyProfileScreen() {
     return `${mm}/${dd}/${yyyy}`;
   };
 
-  const onDobChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
-    if (event.type === 'set' && selectedDate) setDob(selectedDate);
+  const onDobChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowPicker(false);
+    }
+    if (selectedDate) {
+      setDob(selectedDate);
+      if (Platform.OS === 'ios') {
+        setShowPicker(false);
+      }
+    }
   };
 
   const handleContinue = () => {
@@ -128,24 +141,59 @@ export default function BabyProfileScreen() {
           {/* Date of birth */}
           <View>
             <Text style={styles.label}>DATE OF BIRTH</Text>
-            <TouchableOpacity
-              style={styles.input}
-              onPress={() => setShowPicker(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.inputText, !dob && styles.inputPlaceholder]}>
-                {dob ? formatDob(dob) : 'MM / DD / YYYY'}
-              </Text>
-            </TouchableOpacity>
-
-            {showPicker && (
-              <DateTimePicker
-                value={dob ?? new Date()}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                onChange={onDobChange}
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={dob ? dob.toISOString().split('T')[0] : ''}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setDob(new Date(e.target.value + 'T00:00:00'))
+                  }
+                }}
+                max={new Date().toISOString().split('T')[0]}
+                style={{
+                  width: '100%',
+                  paddingBottom: 13,
+                  paddingTop: 16,
+                  paddingLeft: 13,
+                  paddingRight: 12,
+                  fontSize: 15,
+                  borderWidth: 3,
+                  borderColor: Colors.outline,
+                  borderBottomLeftRadius: 22,
+                  borderBottomRightRadius: 22,
+                  borderTopLeftRadius: 22,
+                  borderTopRightRadius: 22,
+                  borderStyle: 'solid',
+                  fontFamily: FontFamily.body,
+                  color: Colors.gray900,
+                  backgroundColor: Colors.white,
+                  boxSizing: 'border-box',
+                  boxShadow: '3px 3px 0px rgba(61, 31, 39, 1.00)',
+                } as any}
               />
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={styles.input}
+                  onPress={() => setShowPicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.inputText, !dob && styles.inputPlaceholder]}>
+                    {dob ? formatDob(dob) : 'MM / DD / YYYY'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showPicker && DateTimePicker && (
+                  <DateTimePicker
+                    value={dob ?? new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    maximumDate={new Date()}
+                    onChange={onDobChange}
+                  />
+                )}
+              </>
             )}
           </View>
 
