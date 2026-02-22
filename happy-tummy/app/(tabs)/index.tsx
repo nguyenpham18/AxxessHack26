@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,22 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
+import { getMe, listChildren, type ChildResponse } from '@/lib/api';
 import { getCoachMessage } from "../../lib/featherless";
 
 export default function DashboardScreen() {
   const [selectedBaby, setSelectedBaby] = useState(0);
+  const [parentName, setParentName] = useState('');
+  const [children, setChildren] = useState<ChildResponse[]>([]);
+
+  useEffect(() => {
+    getMe()
+      .then((user) => setParentName(user.first_name))
+      .catch(() => {});
+    listChildren()
+      .then(setChildren)
+      .catch(() => {});
+  }, []);
 
   const [coachText, setCoachText] = useState("");
   const [loadingCoach, setLoadingCoach] = useState(false);
@@ -54,12 +65,13 @@ export default function DashboardScreen() {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.hi}>Good morning!</Text>
-            <Text style={styles.name}>Welcome back, Sarah!</Text>
+            <Text style={styles.name}>
+              {parentName ? `Welcome back, ${parentName}!` : 'Welcome back!'}
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* Wave curve */}
       <View style={styles.wave} />
 
       <ScrollView
@@ -103,11 +115,12 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── Today's insights ── */}
-        <Text style={styles.sectionTitle}>Today's Insights — Maya</Text>
+        <Text style={styles.sectionTitle}>
+          Today's Insights — {children[selectedBaby]?.name ?? 'Your Baby'}
+        </Text>
 
-        {/* Warning insight */}
-        <View style={[styles.insightCard, { borderLeftColor: Colors.yellow }]}>
+        <View style={[styles.insightCard, { borderLeftColor: Colors.yellow }]}
+        >
           <View style={styles.insightTop}>
             <Ionicons name="warning" size={18} color={Colors.yellow} />
             <Text style={styles.insightTitle}>No poop logged — Day 2</Text>
@@ -137,8 +150,8 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* OK insight */}
-        <View style={[styles.insightCard, { borderLeftColor: Colors.green }]}>
+        <View style={[styles.insightCard, { borderLeftColor: Colors.green }]}
+        >
           <View style={styles.insightTop}>
             <Ionicons name="checkmark-circle" size={18} color={Colors.green} />
             <Text style={styles.insightTitle}>Sweet potato — all clear!</Text>
@@ -280,6 +293,11 @@ const styles = StyleSheet.create({
     color: Colors.gray700,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  emptyText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.gray500,
   },
 
   // Add baby card

@@ -13,10 +13,31 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
+import { loginUser } from '@/lib/api';
+import { setAccessToken } from '@/lib/session';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      const token = await loginUser({ username, password });
+      setAccessToken(token.access_token);
+      router.replace('/(tabs)');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -71,10 +92,12 @@ export default function LoginScreen() {
 
           {/* Sign in button */}
           <AppButton
-            label="Sign In"
+            label={loading ? 'Signing In...' : 'Sign In'}
             variant="red"
-            onPress={() => router.replace('/(auth)/signup')}
+            onPress={handleLogin}
           />
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           {/* Sign up link */}
           <View style={styles.footer}>
@@ -185,5 +208,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.red,
     textDecorationLine: 'underline',
+  },
+  errorText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.redDark,
+    textAlign: 'center',
   },
 });

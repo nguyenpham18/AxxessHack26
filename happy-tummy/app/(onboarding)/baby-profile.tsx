@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { setChildDraft } from '@/lib/childDraft';
 
 const AVATARS = [
   { IconComponent: MaterialCommunityIcons, iconName: 'baby-face' as const, color: '#FF6B9D', label: 'Baby Girl' },
@@ -27,6 +28,15 @@ export default function BabyProfileScreen() {
   const [babyName, setBabyName] = useState('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState(0);
+
+  const handleContinue = () => {
+    setChildDraft({
+      name: babyName,
+      dob,
+      gender: GENDERS[gender],
+    });
+    router.push('/(onboarding)/baby-details');
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -135,7 +145,7 @@ export default function BabyProfileScreen() {
           <AppButton
             label="Continue →"
             variant="red"
-            onPress={() => router.push('/(onboarding)/baby-details')}
+            onPress={handleContinue}
             style={{ marginTop: 8 }}
           />
         </ScrollView>

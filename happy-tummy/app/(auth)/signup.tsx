@@ -13,12 +13,34 @@ import {
 import { router } from 'expo-router';
 import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
+import { loginUser, registerUser } from '@/lib/api';
+import { setAccessToken } from '@/lib/session';
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSignup = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      await registerUser({ first_name: name, username, password });
+      const token = await loginUser({ username, password });
+      setAccessToken(token.access_token);
+      router.replace('/(onboarding)/mom-profile');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Signup failed';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -94,11 +116,13 @@ export default function SignupScreen() {
 
           {/* Create account button */}
           <AppButton
-            label="Create Account"
+            label={loading ? 'Creating Account...' : 'Create Account'}
             variant="red"
-            onPress={() => router.push('/(onboarding)/mom-profile')}
+            onPress={handleSignup}
             style={{ marginTop: 8 }}
           />
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           {/* Sign in link */}
           <View style={styles.footer}>
@@ -200,5 +224,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.red,
     textDecorationLine: 'underline',
+  },
+  errorText: {
+    fontFamily: FontFamily.body,
+    fontSize: 13,
+    color: Colors.redDark,
+    textAlign: 'center',
   },
 });
