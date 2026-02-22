@@ -19,8 +19,15 @@ export default function BabyDetailsScreen() {
   const [allergyText, setAllergyText] = useState('');
   const [premature, setPremature] = useState<boolean | null>(null);
   const [delivery, setDelivery] = useState<number | null>(null);
+  const [parentConsent, setParentConsent] = useState<boolean | null>(null);
+  const [consentError, setConsentError] = useState(false);
 
   const handleContinue = () => {
+    if (parentConsent !== true) {
+      setConsentError(true);
+      return;
+    }
+
     const weightValue = Number.parseFloat(weight);
     const normalizedWeight = Number.isFinite(weightValue)
       ? Math.round(weightValue)
@@ -31,6 +38,7 @@ export default function BabyDetailsScreen() {
       allergies: hasAllergy,
       earlyBorn: premature,
       deliveryMethod: delivery,
+      parentConsent,
     });
 
     router.replace('/(onboarding)/baby-intake');
@@ -162,6 +170,37 @@ export default function BabyDetailsScreen() {
           </View>
         </View>
 
+        {/* Q5 — Parent Consent (COPPA) */}
+        <View>
+          <Text style={styles.label}>PARENTAL CONSENT NOTICE</Text>
+          <View style={styles.noticeBox}>
+            <Text style={styles.noticeText}>
+              In compliance with the Children's Online Privacy Protection Act (COPPA) and applicable data protection laws, HappyTummy requires explicit parental consent before collecting any health-related information about your child.
+            </Text>
+            <Text style={styles.noticeText}>By checking the box below, you confirm that:</Text>
+            <Text style={styles.noticeBullet}>• You are the parent or legal guardian of the child whose data will be entered</Text>
+            <Text style={styles.noticeBullet}>• You consent to the collection, storage, and processing of your child's dietary and health data solely for the purpose of generating nutritional recommendations</Text>
+            <Text style={styles.noticeBullet}>• You acknowledge that all recommendations are AI-generated and informational only — not a substitute for advice from a licensed pediatrician</Text>
+            <Text style={styles.noticeBullet}>• You understand you have the right to access, correct, or permanently delete your child's data at any time by contacting us</Text>
+            <Text style={styles.noticeText}>For questions about how we handle your data, please review our Privacy Policy.</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.consentRow}
+            onPress={() => {
+              setParentConsent((prev) => !prev);
+              setConsentError(false);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.checkbox, parentConsent === true && styles.checkboxChecked]} />
+            <Text style={styles.consentLabel}>I confirm and provide parental consent.</Text>
+          </TouchableOpacity>
+
+          {consentError && (
+            <Text style={styles.consentErrorText}>You must provide parental consent to continue.</Text>
+          )}
+        </View>
         <AppButton
           label="Continue →"
           variant="red"
@@ -326,5 +365,56 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.gray500,
     marginTop: 6,
+  },
+  noticeBox: {
+    backgroundColor: Colors.white,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: Radius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 8,
+    ...Shadow.sm,
+  },
+  noticeText: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
+    lineHeight: 18,
+  },
+  noticeBullet: {
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.gray700,
+    lineHeight: 18,
+  },
+  consentRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 3,
+    borderColor: Colors.outline,
+    borderRadius: 6,
+    backgroundColor: Colors.white,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.red,
+  },
+  consentLabel: {
+    flex: 1,
+    fontFamily: FontFamily.bodyBold,
+    fontSize: 13,
+    color: Colors.gray900,
+  },
+  consentErrorText: {
+    marginTop: 8,
+    fontFamily: FontFamily.body,
+    fontSize: 12,
+    color: Colors.redDark,
   },
 });

@@ -207,6 +207,7 @@ export default function BabyIntakeScreen() {
                   early_born: draft.earlyBorn ? 1 : 0,
                   delivery_method: draft.deliveryMethod ?? null,
                   envi_change: null,
+                  parent_consent: draft.parentConsent === true,
                 });
                 resetChildDraft();
                 router.replace('/(tabs)');

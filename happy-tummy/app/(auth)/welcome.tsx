@@ -47,7 +47,6 @@ export default function WelcomeScreen() {
             <Text style={styles.btnGhostText}>I already have an account</Text>
           </TouchableOpacity>
         </View>
-
       </View>
     </SafeAreaView>
   );

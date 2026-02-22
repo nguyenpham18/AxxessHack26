@@ -32,8 +32,8 @@ export default function SignupScreen() {
     try {
       await registerUser({ first_name: name, username, password });
       const token = await loginUser({ username, password });
-      setAccessToken(token.access_token);
-      router.replace('/(onboarding)/mom-profile');
+      await setAccessToken(token.access_token);
+      router.replace('/(onboarding)/parent-profile');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Signup failed';
       setError(message);
@@ -52,7 +52,6 @@ export default function SignupScreen() {
         <View style={styles.header}>
           <Text style={styles.headerEmoji}></Text>
           <Text style={styles.headerTitle}>Join{'\n'}Happy Tummy!</Text>
-          <Text style={styles.headerSub}>Set up your account in 2 minutes</Text>
         </View>
 
         {/* Wave curve */}

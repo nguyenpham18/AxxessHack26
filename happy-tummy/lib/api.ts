@@ -4,7 +4,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 const API_ROOT = `${API_BASE_URL}/api`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getAccessToken();
+  const token = await getAccessToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> | undefined),
@@ -46,6 +46,7 @@ export type ChildResponse = {
   early_born: number | null;
   delivery_method: number | null;
   envi_change: number | null;
+  parent_consent: boolean
 };
 
 export async function registerUser(payload: {
@@ -84,6 +85,7 @@ export async function createChild(payload: {
   early_born?: number | null;
   delivery_method?: number | null;
   envi_change?: number | null;
+  parent_consent?: boolean
 }) {
   return request<ChildResponse>('/children', {
     method: 'POST',

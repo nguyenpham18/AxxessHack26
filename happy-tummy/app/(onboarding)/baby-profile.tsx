@@ -15,24 +15,39 @@ import { Colors, FontFamily, Shadow, Radius } from '@/constants/theme';
 import { AppButton } from '@/components/shared/AppButton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { setChildDraft } from '@/lib/childDraft';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 const AVATARS = [
   { IconComponent: MaterialCommunityIcons, iconName: 'baby-face' as const, color: '#FF6B9D', label: 'Baby Girl' },
   { IconComponent: MaterialCommunityIcons, iconName: 'baby-face-outline' as const, color: '#2196F3', label: 'Baby Boy' }
 ];
 
-const GENDERS = ['Girl', 'Boy', 'Other'];
+const GENDERS = ['Girl', 'Boy'];
 
 export default function BabyProfileScreen() {
   const [avatar, setAvatar] = useState(0);
   const [babyName, setBabyName] = useState('');
-  const [dob, setDob] = useState('');
+  const [dob, setDob] = useState<Date | null>(null);
   const [gender, setGender] = useState(0);
+  const [showPicker, setShowPicker] = useState(false);
+
+  const formatDob = (date: Date | null) => {
+    if (!date) return '';
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  };
+
+  const onDobChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') setShowPicker(false);
+    if (event.type === 'set' && selectedDate) setDob(selectedDate);
+  };
 
   const handleContinue = () => {
     setChildDraft({
       name: babyName,
-      dob,
+      dob: formatDob(dob),
       gender: GENDERS[gender],
     });
     router.push('/(onboarding)/baby-details');
@@ -113,14 +128,25 @@ export default function BabyProfileScreen() {
           {/* Date of birth */}
           <View>
             <Text style={styles.label}>DATE OF BIRTH</Text>
-            <TextInput
+            <TouchableOpacity
               style={styles.input}
-              value={dob}
-              onChangeText={setDob}
-              placeholder="MM / DD / YYYY"
-              placeholderTextColor={Colors.gray500}
-              keyboardType="numeric"
-            />
+              onPress={() => setShowPicker(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.inputText, !dob && styles.inputPlaceholder]}>
+                {dob ? formatDob(dob) : 'MM / DD / YYYY'}
+              </Text>
+            </TouchableOpacity>
+
+            {showPicker && (
+              <DateTimePicker
+                value={dob ?? new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={onDobChange}
+              />
+            )}
           </View>
 
           {/* Gender */}
@@ -280,6 +306,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.gray900,
     ...Shadow.sm,
+  },
+  inputText: {
+    fontFamily: FontFamily.body,
+    fontSize: 15,
+    color: Colors.gray900,
+  },
+  inputPlaceholder: {
+    color: Colors.gray500,
   },
 
   // Gender selector
